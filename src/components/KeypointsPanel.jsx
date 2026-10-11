@@ -5,24 +5,18 @@ import { toGray } from '../cv/utils.js';
 
 const DEFAULTS = { type: 'harris', th: 25 };
 
-export default function KeypointsPanel({ applyOp, resetPanel, hasChanges, showToast }) {
+export default function KeypointsPanel({ mats, applyOp, resetPanel, hasBase, showToast }) {
   const [type, setType] = useState(DEFAULTS.type);
   const [th, setTh] = useState(DEFAULTS.th);
 
-  const drawPoints = (rgbMat, points) => {
-    const out = rgbMat.clone();
-    for (const p of points) {
-      cv.circle(out, new cv.Point(p.x, p.y), 4, new cv.Scalar(255, 40, 40), 2, cv.LINE_AA);
-      cv.circle(out, new cv.Point(p.x, p.y), 1, new cv.Scalar(255, 255, 0), 1, cv.LINE_AA);
-    }
-    return out;
-  };
-
   const run = () => {
-    applyOp((src) => {
-      const g = toGray(src);
-      const points = [];
+    const m = mats.current;
+    if (!m || !m.cur) { showToast('Сначала загрузите изображение'); return; }
 
+    // ---- Детекция точек ----
+    const g = toGray(m.cur);
+    const points = [];
+    try {
       if (type === 'harris') {
         const dst = new cv.Mat();
         cv.cornerHarris(g, dst, 2, 3, 0.04);
@@ -31,18 +25,15 @@ export default function KeypointsPanel({ applyOp, resetPanel, hasChanges, showTo
         cv.dilate(dst, dil, k);
         const mm = cv.minMaxLoc(dst, new cv.Mat());
         const thr = mm.maxVal * (th / 100) * 0.2;
-        for (let y = 0; y < dst.rows; y++)
+        for (let y = 0; y < dst.rows; y++) {
           for (let x = 0; x < dst.cols; x++) {
             const v = dst.floatAt(y, x);
             if (v === dil.floatAt(y, x) && v > thr) points.push({ x, y });
           }
+        }
         dst.delete(); dil.delete(); k.delete();
       } else if (type === 'fast') {
-        if (typeof jsfeat === 'undefined') {
-          showToast('jsfeat не загружен');
-          g.delete();
-          return src.clone();
-        }
+        if (typeof jsfeat === 'undefined') throw new Error('jsfeat не загружен');
         const width = g.cols, height = g.rows;
         const imgU8 = new jsfeat.matrix_t(width, height, jsfeat.U8C1_t);
         for (let i = 0; i < g.data.length; i++) imgU8.data[i] = g.data[i];
@@ -62,12 +53,28 @@ export default function KeypointsPanel({ applyOp, resetPanel, hasChanges, showTo
         }
         kp.delete(); mask.delete(); orb.delete();
       }
-
+    } catch (e) {
+      console.error(e);
       g.delete();
-      const res = drawPoints(src, points);
-      setTimeout(() => showToast('Найдено точек: ' + points.length), 0);
-      return res;
-    }, 'Ключевые точки', 'keypoints');
+      showToast('Ошибка: ' + e.message);
+      return;
+    }
+    g.delete();
+
+    if (points.length === 0) {
+      showToast('Не найдены — уменьшите порог');
+      return;
+    }
+
+    // ---- Через applyOp, с panelKey='keypoints' — как все панели ----
+    applyOp((src) => {
+      const out = src.clone();
+      for (const p of points) {
+        cv.circle(out, new cv.Point(p.x, p.y), 4, new cv.Scalar(255, 40, 40), 2, cv.LINE_AA);
+        cv.circle(out, new cv.Point(p.x, p.y), 1, new cv.Scalar(255, 255, 0), 1, cv.LINE_AA);
+      }
+      return out;
+    }, `Найдено точек: ${points.length}`, 'keypoints');
   };
 
   const handleReset = () => {
@@ -91,8 +98,8 @@ export default function KeypointsPanel({ applyOp, resetPanel, hasChanges, showTo
         <button style={{ marginTop: 8 }} onClick={run}>Найти ключевые точки</button>
 
         <div className="btn-row">
-          <button className={hasChanges ? 'green' : 'sec'} onClick={handleReset}>
-            {hasChanges ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
+          <button className={hasBase ? 'green' : 'sec'} onClick={handleReset}>
+            {hasBase ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
           </button>
         </div>
       </div>

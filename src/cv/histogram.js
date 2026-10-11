@@ -1,32 +1,59 @@
 import cv from './cvInstance.js';
 
+// Красивое округление максимума вверх
+function niceMax(v) {
+  if (v <= 10) return 10;
+  const exp = Math.floor(Math.log10(v));
+  const base = Math.pow(10, exp);
+  const norm = v / base;
+  let nice;
+  if (norm <= 1) nice = 1;
+  else if (norm <= 2) nice = 2;
+  else if (norm <= 2.5) nice = 2.5;
+  else if (norm <= 5) nice = 5;
+  else nice = 10;
+  return nice * base;
+}
+
+// Короткая запись больших чисел: 1 234 → "1.2K"
+function fmtCount(n) {
+  if (n >= 1_000_000) return (n / 1_000_000).toFixed(1).replace(/\.0$/, '') + 'M';
+  if (n >= 1_000) return (n / 1_000).toFixed(1).replace(/\.0$/, '') + 'K';
+  return String(Math.round(n));
+}
+
 export function drawHistogram(canvas, mat, channels) {
   if (!canvas) return;
-  const W = 620, H = 210;
-  canvas.width = W; canvas.height = H;
+
+  const PAD_L = 56;   // отступ слева под ось Y
+  const PAD_R = 12;
+  const PAD_T = 12;
+  const PAD_B = 28;   // отступ снизу под ось X
+  const W = 620;
+  const H = 240;
+
+  canvas.width = W;
+  canvas.height = H;
   const ctx = canvas.getContext('2d');
+
   ctx.fillStyle = '#0f1116';
   ctx.fillRect(0, 0, W, H);
 
-  ctx.strokeStyle = '#232937';
-  ctx.lineWidth = 1;
-  for (let i = 0; i <= 4; i++) {
-    const y = 12 + ((H - 40) * i) / 4;
-    ctx.beginPath(); ctx.moveTo(12, y); ctx.lineTo(W - 12, y); ctx.stroke();
-  }
-  ctx.fillStyle = '#4a5468';
-  ctx.font = '10px Segoe UI';
-  ctx.fillText('0', 12, H - 8);
-  ctx.fillText('128', W / 2 - 10, H - 8);
-  ctx.fillText('255', W - 26, H - 8);
+  const plotX = PAD_L;
+  const plotY = PAD_T;
+  const plotW = W - PAD_L - PAD_R;
+  const plotH = H - PAD_T - PAD_B;
 
   if (!mat) {
     ctx.fillStyle = '#3b4354';
     ctx.font = '13px Segoe UI';
-    ctx.fillText('нет данных', W / 2 - 36, H / 2);
+    ctx.textAlign = 'center';
+    ctx.fillText('нет данных', W / 2, H / 2);
+    ctx.textAlign = 'left';
     return;
   }
 
+  // ---- Считаем гистограммы по каналам ----
   let hists;
   try {
     const small = new cv.Mat();
@@ -34,7 +61,9 @@ export function drawHistogram(canvas, mat, channels) {
     const scale = Math.max(mat.cols, mat.rows) > maxSide
       ? maxSide / Math.max(mat.cols, mat.rows) : 1;
     if (scale < 1) {
-      cv.resize(mat, small, new cv.Size(Math.round(mat.cols * scale), Math.round(mat.rows * scale)), 0, 0, cv.INTER_AREA);
+      cv.resize(mat, small,
+        new cv.Size(Math.round(mat.cols * scale), Math.round(mat.rows * scale)),
+        0, 0, cv.INTER_AREA);
     } else mat.copyTo(small);
 
     const ch = new cv.MatVector();
@@ -46,32 +75,110 @@ export function drawHistogram(canvas, mat, channels) {
       vec.push_back(m);
       const hist = new cv.Mat();
       const mask = new cv.Mat();
+      // Тип CV_32S — точные целые счётчики, а не float
       cv.calcHist(vec, [0], mask, hist, [256], [0, 256], false);
+      // hist.data32F содержит значения, но нам важна точность
       hists.push(Array.from(hist.data32F));
       vec.delete(); hist.delete(); mask.delete();
     }
     ch.delete(); small.delete();
-  } catch (e) { console.warn(e); return; }
+  } catch (e) {
+    console.warn('histogram:', e);
+    return;
+  }
 
-  let maxV = 1;
-  for (const h of hists) for (let i = 0; i < 256; i++) if (h[i] > maxV) maxV = h[i];
+  // Если изображение было уменьшено — пересчитываем счётчики в реальные пиксели
+  const scaleFactor = (() => {
+    const scale = Math.max(mat.cols, mat.rows) > 480
+      ? 480 / Math.max(mat.cols, mat.rows) : 1;
+    return scale < 1 ? 1 / (scale * scale) : 1;
+  })();
 
+  // Реальные счётчики пикселей
+  const realHists = hists.map(h => h.map(v => Math.round(v * scaleFactor)));
+
+  // Максимум по всем видимым каналам
   const show = [channels.r, channels.g, channels.b];
+  let maxVal = 0;
+  for (let c = 0; c < 3; c++) {
+    if (!show[c]) continue;
+    for (let i = 0; i < 256; i++) {
+      if (realHists[c][i] > maxVal) maxVal = realHists[c][i];
+    }
+  }
+  if (maxVal === 0) maxVal = 1;
+  const niceYMax = niceMax(maxVal);
+
+  // ---- Ось Y: подписи и сетка ----
+  const Y_TICKS = 5;
+  ctx.font = '10px Segoe UI';
+  ctx.textBaseline = 'middle';
+
+  for (let t = 0; t <= Y_TICKS; t++) {
+    const frac = t / Y_TICKS;
+    const y = plotY + plotH - frac * plotH;
+    const value = frac * niceYMax;
+
+    // Горизонтальная линия
+    ctx.strokeStyle = t === 0 ? '#3a4252' : '#232937';
+    ctx.lineWidth = 1;
+    ctx.beginPath();
+    ctx.moveTo(plotX, Math.round(y) + 0.5);
+    ctx.lineTo(plotX + plotW, Math.round(y) + 0.5);
+    ctx.stroke();
+
+    // Подпись Y
+    ctx.fillStyle = '#7a869a';
+    ctx.textAlign = 'right';
+    ctx.fillText(fmtCount(value), plotX - 6, y);
+  }
+
+  // Подпись оси Y
+  ctx.save();
+  ctx.translate(14, plotY + plotH / 2);
+  ctx.rotate(-Math.PI / 2);
+  ctx.fillStyle = '#5a6478';
+  ctx.font = '10px Segoe UI';
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText('пикселей', 0, 0);
+  ctx.restore();
+
+  // ---- Ось X ----
+  ctx.font = '10px Segoe UI';
+  ctx.textBaseline = 'top';
+  ctx.textAlign = 'center';
+  const X_TICKS = [0, 64, 128, 192, 255];
+  for (const xv of X_TICKS) {
+    const x = plotX + (plotW * xv / 255);
+    ctx.strokeStyle = '#1c2230';
+    ctx.beginPath();
+    ctx.moveTo(Math.round(x) + 0.5, plotY);
+    ctx.lineTo(Math.round(x) + 0.5, plotY + plotH);
+    ctx.stroke();
+
+    ctx.fillStyle = '#7a869a';
+    ctx.fillText(String(xv), x, plotY + plotH + 6);
+  }
+  // Подпись оси X
+  ctx.fillStyle = '#5a6478';
+  ctx.fillText('яркость', plotX + plotW / 2, plotY + plotH + 16);
+
+  // ---- Графики ----
   const colors = ['#ff5c5c', '#4ade80', '#5c9bff'];
-  const plotH = H - 40;
 
   ctx.globalCompositeOperation = 'lighter';
   for (let c = 0; c < 3; c++) {
     if (!show[c]) continue;
-    const h = hists[c];
+    const h = realHists[c];
     ctx.beginPath();
-    ctx.moveTo(12, H - 25);
+    ctx.moveTo(plotX, plotY + plotH);
     for (let i = 0; i < 256; i++) {
-      const x = 12 + ((W - 24) * i) / 255;
-      const y = H - 25 - (h[i] / maxV) * plotH;
+      const x = plotX + (plotW * i / 255);
+      const y = plotY + plotH - (h[i] / niceYMax) * plotH;
       ctx.lineTo(x, y);
     }
-    ctx.lineTo(W - 12, H - 25);
+    ctx.lineTo(plotX + plotW, plotY + plotH);
     ctx.closePath();
     ctx.fillStyle = colors[c] + '55';
     ctx.fill();
@@ -81,14 +188,24 @@ export function drawHistogram(canvas, mat, channels) {
   }
   ctx.globalCompositeOperation = 'source-over';
 
+  // ---- Легенда каналов в левом верхнем углу ----
   ctx.font = '11px Segoe UI';
-  let lx = 14;
+  ctx.textAlign = 'left';
+  ctx.textBaseline = 'middle';
+  let lx = plotX + 6;
   ['R', 'G', 'B'].forEach((n, i) => {
     if (!show[i]) return;
     ctx.fillStyle = colors[i];
-    ctx.fillRect(lx, 8, 10, 10);
+    ctx.fillRect(lx, plotY + 4, 10, 10);
     ctx.fillStyle = '#aab3c4';
-    ctx.fillText(n, lx + 14, 17);
+    ctx.fillText(n, lx + 14, plotY + 9);
     lx += 34;
   });
+
+  // ---- Информация о максимуме ----
+  ctx.font = '10px Segoe UI';
+  ctx.textAlign = 'right';
+  ctx.fillStyle = '#7a869a';
+  ctx.fillText(`макс: ${fmtCount(maxVal)} px`, W - PAD_R - 4, plotY + 9);
+  ctx.textAlign = 'left';
 }

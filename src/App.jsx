@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import cv from './cv/cvInstance.js';
 import { useOpenCV } from './hooks/useOpenCV.js';
-import { showMat, toGray, grayToRGB, matsAreEqual } from './cv/utils.js';
+import { showMat, toGray, grayToRGB } from './cv/utils.js';
 import { drawHistogram } from './cv/histogram.js';
 
 import Section from './components/Section.jsx';
@@ -24,15 +24,10 @@ export default function App() {
   const [pixel, setPixel] = useState({ r: 79, g: 156, b: 249 });
   const [channels, setChannels] = useState({ r: true, g: true, b: true });
   const [toast, setToast] = useState('');
-  const [historyLen, setHistoryLen] = useState(0);
+  const [tick, setTick] = useState(0);
 
   const [openAreas, setOpenAreas] = useState({
     image: true, similar: true, video: true
-  });
-
-  // Какие панели применили операцию
-  const [panelApplied, setPanelApplied] = useState({
-    bw: false, morph: false, filters: false, edge: false, keypoints: false
   });
 
   const mats = useRef({
@@ -40,8 +35,9 @@ export default function App() {
     cur: null,
     before: null,
     base: null,
+    kpBase: null,
     history: [],
-    panelBases: {} // { bw: Mat, morph: Mat, ... }
+    panelBases: {}
   });
 
   const cvResultRef = useRef(null);
@@ -56,36 +52,37 @@ export default function App() {
   }, []);
 
   const refreshDisplay = useCallback(() => {
-    if (openAreas.image) {
-      showMat(mats.current.cur, cvResultRef.current);
-      drawHistogram(histAfterRef.current, mats.current.cur, channels);
-    }
-    setHistoryLen(mats.current.history.length);
-  }, [channels, openAreas.image]);
+    setTick(t => t + 1);
+  }, []);
 
   useEffect(() => {
-    if (openAreas.image && mats.current.cur) {
+    if (mats.current.cur && cvResultRef.current) {
       showMat(mats.current.cur, cvResultRef.current);
+    }
+    if (mats.current.cur && histAfterRef.current) {
       drawHistogram(histAfterRef.current, mats.current.cur, channels);
     }
-  }, [openAreas.image, channels]);
+  }, [tick, channels, openAreas.image]);
 
-  const clearHistory = useCallback(() => {
+  const clearAllBases = useCallback(() => {
     const m = mats.current;
     while (m.history.length) {
       const h = m.history.pop();
-      try { h.delete(); } catch (_) {}
+      try { h.delete(); } catch (_) { }
     }
-    setHistoryLen(0);
-  }, []);
-
-  const clearPanelBases = useCallback(() => {
-    const m = mats.current;
-    for (const key in m.panelBases) {
-      try { m.panelBases[key].delete(); } catch (_) {}
+    for (const k in m.panelBases) {
+      try { m.panelBases[k].delete(); } catch (_) { }
     }
     m.panelBases = {};
-    setPanelApplied({ bw: false, morph: false, filters: false, edge: false, keypoints: false });
+  }, []);
+
+  const clearOtherBases = useCallback((keepKey) => {
+    const m = mats.current;
+    for (const k in m.panelBases) {
+      if (k === keepKey) continue;
+      try { m.panelBases[k].delete(); } catch (_) { }
+      delete m.panelBases[k];
+    }
   }, []);
 
   const handleFileUpload = useCallback((file) => {
@@ -117,8 +114,8 @@ export default function App() {
         if (m.cur) m.cur.delete();
         if (m.before) m.before.delete();
         if (m.base) m.base.delete();
-        clearHistory();
-        clearPanelBases();
+        if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
+        clearAllBases();
 
         m.orig = rgb;
         m.cur = rgb.clone();
@@ -135,18 +132,17 @@ export default function App() {
         });
 
         setOpenAreas((s) => s.image ? s : { ...s, image: true });
-
         refreshDisplay();
         showToast('Изображение загружено');
         URL.revokeObjectURL(url);
       } catch (e) {
         console.error(e);
-        showToast('Ошибка обработки: ' + e.message);
+        showToast('Ошибка: ' + e.message);
       }
     };
     img.onerror = () => { showToast('Не удалось открыть файл'); URL.revokeObjectURL(url); };
     img.src = url;
-  }, [refreshDisplay, showToast, clearHistory, clearPanelBases]);
+  }, [refreshDisplay, showToast, clearAllBases]);
 
   const handleReset = useCallback(() => {
     const m = mats.current;
@@ -154,14 +150,14 @@ export default function App() {
     if (m.cur) m.cur.delete();
     if (m.before) m.before.delete();
     if (m.base) m.base.delete();
-    clearHistory();
-    clearPanelBases();
+    if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
+    clearAllBases();
     m.cur = m.orig.clone();
     m.before = null;
     m.base = null;
     refreshDisplay();
-    showToast('Изображение сброшено к исходному');
-  }, [refreshDisplay, showToast, clearHistory, clearPanelBases]);
+    showToast('Сброшено к исходному');
+  }, [refreshDisplay, showToast, clearAllBases]);
 
   const handleUndo = useCallback(() => {
     const m = mats.current;
@@ -171,17 +167,14 @@ export default function App() {
     m.before = m.cur;
     m.cur = prev;
     if (m.base) { m.base.delete(); m.base = null; }
-    // Сбрасываем флаги панелей — их базы больше невалидны после отката
-    for (const key in m.panelBases) {
-      try { m.panelBases[key].delete(); } catch (_) {}
-    }
-    m.panelBases = {};
-    setPanelApplied({ bw: false, morph: false, filters: false, edge: false, keypoints: false });
+    if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
+    clearAllBases();
     refreshDisplay();
     showToast('Откат выполнен');
-  }, [refreshDisplay, showToast]);
+  }, [refreshDisplay, showToast, clearAllBases]);
 
-  // applyOp с опциональным panelKey — при первом применении сохраняет базу панели
+  // Панели 7-10 используют panelKey для своей отмены.
+  // Панель 11 не передаёт panelKey — она сама управляет своим кэшем.
   const applyOp = useCallback((fn, opName, panelKey) => {
     const m = mats.current;
     if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
@@ -195,64 +188,51 @@ export default function App() {
     }
     if (!out) { showToast('Пустой результат'); return; }
 
-    if (matsAreEqual(m.cur, out)) {
-      out.delete();
-      showToast('Результат не отличается от текущего');
-      return;
-    }
-
-    // Запоминаем базу панели при первом успешном применении
-    if (panelKey && !m.panelBases[panelKey]) {
-      try {
+    if (panelKey) {
+      clearOtherBases(panelKey);
+      if (!m.panelBases[panelKey]) {
         m.panelBases[panelKey] = m.cur.clone();
-      } catch (e) {
-        console.warn('panelBases clone:', e);
       }
+    } else {
+      clearOtherBases(null);
     }
 
-    try {
-      m.history.push(m.cur.clone());
-      while (m.history.length > 20) {
-        const old = m.history.shift();
-        try { old.delete(); } catch (_) {}
-      }
-    } catch (e) { console.warn('history push:', e); }
+    m.history.push(m.cur.clone());
+    if (m.history.length > 20) {
+      const old = m.history.shift();
+      try { old.delete(); } catch (_) { }
+    }
 
-    const before = m.cur.clone();
     if (m.before) m.before.delete();
-    m.before = before;
+    m.before = m.cur.clone();
 
+    const oldCur = m.cur;
     m.cur = out;
+    try { oldCur.delete(); } catch (_) { }
 
     if (m.base) { m.base.delete(); m.base = null; }
 
-    if (panelKey) {
-      setPanelApplied((p) => (p[panelKey] ? p : { ...p, [panelKey]: true }));
-    }
-
     refreshDisplay();
     if (opName) showToast(opName);
-  }, [refreshDisplay, showToast]);
+  }, [refreshDisplay, showToast, clearOtherBases]);
 
-  // Отмена операции конкретной панели
   const resetPanel = useCallback((panelKey, label) => {
     const m = mats.current;
+    if (!m.cur) { showToast('Изображение не загружено'); return; }
     const base = m.panelBases[panelKey];
-    if (base && m.cur) {
+    if (base) {
       const res = base.clone();
-      m.cur.delete();
+      const oldCur = m.cur;
       m.cur = res;
-      try { base.delete(); } catch (_) {}
+      try { oldCur.delete(); } catch (_) { }
+      try { base.delete(); } catch (_) { }
       delete m.panelBases[panelKey];
-
       if (m.before) { m.before.delete(); m.before = null; }
       if (m.base) { m.base.delete(); m.base = null; }
-
-      setPanelApplied((p) => ({ ...p, [panelKey]: false }));
       refreshDisplay();
-      showToast((label || 'Изменения') + ' отменены');
+      showToast((label || 'Операция') + ' отменена');
     } else {
-      setPanelApplied((p) => ({ ...p, [panelKey]: false }));
+      refreshDisplay();
       showToast('Параметры сброшены');
     }
   }, [refreshDisplay, showToast]);
@@ -261,7 +241,7 @@ export default function App() {
     return (
       <div className="loader">
         <div className="spinner" />
-        <div>Загрузка OpenCV.js и jsfeat…</div>
+        <div>Загрузка OpenCV.js…</div>
       </div>
     );
   }
@@ -273,14 +253,20 @@ export default function App() {
     setOpenAreas((s) => ({ ...s, [key]: e.target.open }));
   };
 
+  const hasBaseBW = !!(mats.current.panelBases && mats.current.panelBases.bw);
+  const hasBaseMorph = !!(mats.current.panelBases && mats.current.panelBases.morph);
+  const hasBaseFilters = !!(mats.current.panelBases && mats.current.panelBases.filters);
+  const hasBaseEdge = !!(mats.current.panelBases && mats.current.panelBases.edge);
+  const hasBaseKeypoints = !!(mats.current.panelBases && mats.current.panelBases.keypoints);
+
   return (
     <>
-      <div id="app">
+      <div id="app" data-tick={tick}>
         <details className="area" open={openAreas.image} onToggle={toggleArea('image')}>
           <summary className="area-header">
             <span className="area-num">1</span>
             <h2>Обработка изображений</h2>
-            <span className="area-chevron" aria-hidden="true">▾</span>
+            <span className="area-chevron">▾</span>
           </summary>
 
           <div className="area-body area-image-body">
@@ -290,7 +276,7 @@ export default function App() {
                   onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])} />
                 <div className="btn-row">
                   <button className="sec" onClick={handleReset}>↺ Сброс</button>
-                  <button className="sec" onClick={handleUndo}>↶ Откат ({historyLen})</button>
+                  <button className="sec" onClick={handleUndo}>↶ Откат ({mats.current.history.length})</button>
                 </div>
                 <div className="hint">Клик по изображению — «пипетка».</div>
               </Section>
@@ -314,29 +300,36 @@ export default function App() {
               <AdjustPanel mats={mats} refreshDisplay={refreshDisplay} showToast={showToast} />
 
               <BWCorrectionPanel
+                mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasChanges={panelApplied.bw}
+                hasBase={hasBaseBW}
               />
               <MorphologyPanel
+                mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasChanges={panelApplied.morph}
+                hasBase={hasBaseMorph}
               />
               <FiltersPanel
+                mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasChanges={panelApplied.filters}
+                hasBase={hasBaseFilters}
               />
               <EdgePanel
+                mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasChanges={panelApplied.edge}
+                hasBase={hasBaseEdge}
               />
+
+              {/* Панель 11 — независимая, со своим кэшем */}
               <KeypointsPanel
+                mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasChanges={panelApplied.keypoints}
+                hasBase={hasBaseKeypoints}
                 showToast={showToast}
               />
             </aside>
@@ -359,6 +352,7 @@ export default function App() {
                 )}
 
                 <canvas
+                  key={`cv-${tick}`}
                   ref={cvResultRef}
                   style={{ display: hasImage ? 'block' : 'none' }}
                   onClick={(e) => {
@@ -382,11 +376,7 @@ export default function App() {
                     {['r', 'g', 'b'].map((c) => (
                       <label key={c} className={`ch ch-${c} ${channels[c] ? 'on' : ''}`}>
                         <input type="checkbox" checked={channels[c]}
-                          onChange={(e) => {
-                            const nc = { ...channels, [c]: e.target.checked };
-                            setChannels(nc);
-                            drawHistogram(histAfterRef.current, mats.current.cur, nc);
-                          }} />
+                          onChange={(e) => setChannels({ ...channels, [c]: e.target.checked })} />
                         {c.toUpperCase()}
                       </label>
                     ))}
@@ -402,7 +392,7 @@ export default function App() {
           <summary className="area-header">
             <span className="area-num">2</span>
             <h2>Поиск похожих изображений</h2>
-            <span className="area-chevron" aria-hidden="true">▾</span>
+            <span className="area-chevron">▾</span>
           </summary>
           <div className="area-body">
             <SimilarPanel showToast={showToast} />
@@ -413,14 +403,10 @@ export default function App() {
           <summary className="area-header">
             <span className="area-num">3</span>
             <h2>Работа с видео</h2>
-            <span className="area-chevron" aria-hidden="true">▾</span>
+            <span className="area-chevron">▾</span>
           </summary>
           <div className="area-body">
-            <VideoPanel
-              showToast={showToast}
-              videoElRef={videoElRef}
-              videoCanvasRef={videoCanvasRef}
-            />
+            <VideoPanel showToast={showToast} videoElRef={videoElRef} videoCanvasRef={videoCanvasRef} />
           </div>
         </details>
       </div>
