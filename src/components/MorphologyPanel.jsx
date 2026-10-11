@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import cv from '@/cv/cvInstance.js';
+import cv from '../cv/cvInstance.js';
 import { toGray, grayToRGB } from '../cv/utils.js';
 
 const DEFAULTS = { op: 'erode', shape: 0, ksize: 3, iter: 1 };
 
-export default function MorphologyPanel({ applyOp }) {
+export default function MorphologyPanel({ applyOp, resetPanel, hasChanges }) {
   const [op, setOp] = useState(DEFAULTS.op);
   const [shape, setShape] = useState(DEFAULTS.shape);
   const [ksize, setKsize] = useState(DEFAULTS.ksize);
@@ -26,7 +26,7 @@ export default function MorphologyPanel({ applyOp }) {
       const rgb = grayToRGB(dst);
       kernel.delete(); g.delete(); dst.delete();
       return rgb;
-    }, 'Морфология применена');
+    }, 'Морфология применена', 'morph');
   };
 
   const handleReset = () => {
@@ -34,6 +34,7 @@ export default function MorphologyPanel({ applyOp }) {
     setShape(DEFAULTS.shape);
     setKsize(DEFAULTS.ksize);
     setIter(DEFAULTS.iter);
+    resetPanel('morph', 'Морфология');
   };
 
   return (
@@ -59,8 +60,11 @@ export default function MorphologyPanel({ applyOp }) {
         <label>Итерации: {iter}</label>
         <input type="range" min="1" max="8" value={iter} onChange={(e) => setIter(+e.target.value)} />
         <button style={{ marginTop: 8 }} onClick={run}>Применить</button>
+
         <div className="btn-row">
-          <button className="sec" onClick={handleReset}>↺ Сбросить параметры</button>
+          <button className={hasChanges ? 'green' : 'sec'} onClick={handleReset}>
+            {hasChanges ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
+          </button>
         </div>
       </div>
     </details>

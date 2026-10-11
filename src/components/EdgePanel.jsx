@@ -1,10 +1,10 @@
 import { useState } from 'react';
-import cv from '@/cv/cvInstance.js';
+import cv from '../cv/cvInstance.js';
 import { toGray, grayToRGB } from '../cv/utils.js';
 
 const DEFAULTS = { t1: 80, t2: 180 };
 
-export default function EdgePanel({ applyOp }) {
+export default function EdgePanel({ applyOp, resetPanel, hasChanges }) {
   const [t1, setT1] = useState(DEFAULTS.t1);
   const [t2, setT2] = useState(DEFAULTS.t2);
 
@@ -16,7 +16,7 @@ export default function EdgePanel({ applyOp }) {
       const rgb = grayToRGB(edges);
       g.delete(); edges.delete();
       return rgb;
-    }, 'Детектор Canny');
+    }, 'Детектор Canny', 'edge');
   };
 
   const doRoberts = () => {
@@ -37,12 +37,13 @@ export default function EdgePanel({ applyOp }) {
       kx.delete(); ky.delete(); dx.delete(); dy.delete();
       mag.delete(); norm.delete(); out8.delete(); g.delete();
       return rgb;
-    }, 'Оператор Робертса');
+    }, 'Оператор Робертса', 'edge');
   };
 
   const handleReset = () => {
     setT1(DEFAULTS.t1);
     setT2(DEFAULTS.t2);
+    resetPanel('edge', 'Детекторы границ');
   };
 
   return (
@@ -55,8 +56,11 @@ export default function EdgePanel({ applyOp }) {
         <input type="range" min="0" max="255" value={t2} onChange={(e) => setT2(+e.target.value)} />
         <button style={{ marginTop: 6 }} onClick={doCanny}>Детектор Canny</button>
         <button className="sec" style={{ marginTop: 10 }} onClick={doRoberts}>Оператор Робертса</button>
+
         <div className="btn-row">
-          <button className="sec" onClick={handleReset}>↺ Сбросить параметры</button>
+          <button className={hasChanges ? 'green' : 'sec'} onClick={handleReset}>
+            {hasChanges ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
+          </button>
         </div>
       </div>
     </details>

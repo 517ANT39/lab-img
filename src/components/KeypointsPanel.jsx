@@ -1,11 +1,11 @@
 import { useState } from 'react';
-import cv from '@/cv/cvInstance.js';
+import cv from '../cv/cvInstance.js';
 import jsfeat from '@webarkit/jsfeat-next';
 import { toGray } from '../cv/utils.js';
 
 const DEFAULTS = { type: 'harris', th: 25 };
 
-export default function KeypointsPanel({ applyOp, showToast }) {
+export default function KeypointsPanel({ applyOp, resetPanel, hasChanges, showToast }) {
   const [type, setType] = useState(DEFAULTS.type);
   const [th, setTh] = useState(DEFAULTS.th);
 
@@ -67,12 +67,13 @@ export default function KeypointsPanel({ applyOp, showToast }) {
       const res = drawPoints(src, points);
       setTimeout(() => showToast('Найдено точек: ' + points.length), 0);
       return res;
-    }, 'Ключевые точки');
+    }, 'Ключевые точки', 'keypoints');
   };
 
   const handleReset = () => {
     setType(DEFAULTS.type);
     setTh(DEFAULTS.th);
+    resetPanel('keypoints', 'Ключевые точки');
   };
 
   return (
@@ -88,8 +89,11 @@ export default function KeypointsPanel({ applyOp, showToast }) {
         <label>Порог: {th}</label>
         <input type="range" min="1" max="120" value={th} onChange={(e) => setTh(+e.target.value)} />
         <button style={{ marginTop: 8 }} onClick={run}>Найти ключевые точки</button>
+
         <div className="btn-row">
-          <button className="sec" onClick={handleReset}>↺ Сбросить параметры</button>
+          <button className={hasChanges ? 'green' : 'sec'} onClick={handleReset}>
+            {hasChanges ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
+          </button>
         </div>
       </div>
     </details>

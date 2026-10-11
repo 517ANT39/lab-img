@@ -27,9 +27,12 @@ export default function App() {
   const [historyLen, setHistoryLen] = useState(0);
 
   const [openAreas, setOpenAreas] = useState({
-    image: true,
-    similar: true,
-    video: true
+    image: true, similar: true, video: true
+  });
+
+  // Какие панели применили операцию
+  const [panelApplied, setPanelApplied] = useState({
+    bw: false, morph: false, filters: false, edge: false, keypoints: false
   });
 
   const mats = useRef({
@@ -37,7 +40,8 @@ export default function App() {
     cur: null,
     before: null,
     base: null,
-    history: []
+    history: [],
+    panelBases: {} // { bw: Mat, morph: Mat, ... }
   });
 
   const cvResultRef = useRef(null);
@@ -59,7 +63,6 @@ export default function App() {
     setHistoryLen(mats.current.history.length);
   }, [channels, openAreas.image]);
 
-  // При разворачивании области 1 — перерисовать canvas
   useEffect(() => {
     if (openAreas.image && mats.current.cur) {
       showMat(mats.current.cur, cvResultRef.current);
@@ -74,6 +77,15 @@ export default function App() {
       try { h.delete(); } catch (_) {}
     }
     setHistoryLen(0);
+  }, []);
+
+  const clearPanelBases = useCallback(() => {
+    const m = mats.current;
+    for (const key in m.panelBases) {
+      try { m.panelBases[key].delete(); } catch (_) {}
+    }
+    m.panelBases = {};
+    setPanelApplied({ bw: false, morph: false, filters: false, edge: false, keypoints: false });
   }, []);
 
   const handleFileUpload = useCallback((file) => {
@@ -106,6 +118,7 @@ export default function App() {
         if (m.before) m.before.delete();
         if (m.base) m.base.delete();
         clearHistory();
+        clearPanelBases();
 
         m.orig = rgb;
         m.cur = rgb.clone();
@@ -133,7 +146,7 @@ export default function App() {
     };
     img.onerror = () => { showToast('Не удалось открыть файл'); URL.revokeObjectURL(url); };
     img.src = url;
-  }, [refreshDisplay, showToast, clearHistory]);
+  }, [refreshDisplay, showToast, clearHistory, clearPanelBases]);
 
   const handleReset = useCallback(() => {
     const m = mats.current;
@@ -142,12 +155,13 @@ export default function App() {
     if (m.before) m.before.delete();
     if (m.base) m.base.delete();
     clearHistory();
+    clearPanelBases();
     m.cur = m.orig.clone();
     m.before = null;
     m.base = null;
     refreshDisplay();
     showToast('Изображение сброшено к исходному');
-  }, [refreshDisplay, showToast, clearHistory]);
+  }, [refreshDisplay, showToast, clearHistory, clearPanelBases]);
 
   const handleUndo = useCallback(() => {
     const m = mats.current;
@@ -157,11 +171,18 @@ export default function App() {
     m.before = m.cur;
     m.cur = prev;
     if (m.base) { m.base.delete(); m.base = null; }
+    // Сбрасываем флаги панелей — их базы больше невалидны после отката
+    for (const key in m.panelBases) {
+      try { m.panelBases[key].delete(); } catch (_) {}
+    }
+    m.panelBases = {};
+    setPanelApplied({ bw: false, morph: false, filters: false, edge: false, keypoints: false });
     refreshDisplay();
     showToast('Откат выполнен');
   }, [refreshDisplay, showToast]);
 
-  const applyOp = useCallback((fn, opName) => {
+  // applyOp с опциональным panelKey — при первом применении сохраняет базу панели
+  const applyOp = useCallback((fn, opName, panelKey) => {
     const m = mats.current;
     if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
 
@@ -180,6 +201,15 @@ export default function App() {
       return;
     }
 
+    // Запоминаем базу панели при первом успешном применении
+    if (panelKey && !m.panelBases[panelKey]) {
+      try {
+        m.panelBases[panelKey] = m.cur.clone();
+      } catch (e) {
+        console.warn('panelBases clone:', e);
+      }
+    }
+
     try {
       m.history.push(m.cur.clone());
       while (m.history.length > 20) {
@@ -196,8 +226,35 @@ export default function App() {
 
     if (m.base) { m.base.delete(); m.base = null; }
 
+    if (panelKey) {
+      setPanelApplied((p) => (p[panelKey] ? p : { ...p, [panelKey]: true }));
+    }
+
     refreshDisplay();
     if (opName) showToast(opName);
+  }, [refreshDisplay, showToast]);
+
+  // Отмена операции конкретной панели
+  const resetPanel = useCallback((panelKey, label) => {
+    const m = mats.current;
+    const base = m.panelBases[panelKey];
+    if (base && m.cur) {
+      const res = base.clone();
+      m.cur.delete();
+      m.cur = res;
+      try { base.delete(); } catch (_) {}
+      delete m.panelBases[panelKey];
+
+      if (m.before) { m.before.delete(); m.before = null; }
+      if (m.base) { m.base.delete(); m.base = null; }
+
+      setPanelApplied((p) => ({ ...p, [panelKey]: false }));
+      refreshDisplay();
+      showToast((label || 'Изменения') + ' отменены');
+    } else {
+      setPanelApplied((p) => ({ ...p, [panelKey]: false }));
+      showToast('Параметры сброшены');
+    }
   }, [refreshDisplay, showToast]);
 
   if (!ready) {
@@ -211,7 +268,6 @@ export default function App() {
 
   const hasImage = !!mats.current.cur;
 
-  // ВАЖНО: игнорируем события toggle от вложенных <details>
   const toggleArea = (key) => (e) => {
     if (e.target !== e.currentTarget) return;
     setOpenAreas((s) => ({ ...s, [key]: e.target.open }));
@@ -220,8 +276,6 @@ export default function App() {
   return (
     <>
       <div id="app">
-
-        {/* ============ ОБЛАСТЬ 1 ============ */}
         <details className="area" open={openAreas.image} onToggle={toggleArea('image')}>
           <summary className="area-header">
             <span className="area-num">1</span>
@@ -258,11 +312,33 @@ export default function App() {
               </Section>
 
               <AdjustPanel mats={mats} refreshDisplay={refreshDisplay} showToast={showToast} />
-              <BWCorrectionPanel applyOp={applyOp} />
-              <MorphologyPanel applyOp={applyOp} />
-              <FiltersPanel applyOp={applyOp} />
-              <EdgePanel applyOp={applyOp} />
-              <KeypointsPanel applyOp={applyOp} showToast={showToast} />
+
+              <BWCorrectionPanel
+                applyOp={applyOp}
+                resetPanel={resetPanel}
+                hasChanges={panelApplied.bw}
+              />
+              <MorphologyPanel
+                applyOp={applyOp}
+                resetPanel={resetPanel}
+                hasChanges={panelApplied.morph}
+              />
+              <FiltersPanel
+                applyOp={applyOp}
+                resetPanel={resetPanel}
+                hasChanges={panelApplied.filters}
+              />
+              <EdgePanel
+                applyOp={applyOp}
+                resetPanel={resetPanel}
+                hasChanges={panelApplied.edge}
+              />
+              <KeypointsPanel
+                applyOp={applyOp}
+                resetPanel={resetPanel}
+                hasChanges={panelApplied.keypoints}
+                showToast={showToast}
+              />
             </aside>
 
             <div className="viewer">
@@ -278,8 +354,7 @@ export default function App() {
 
                 {!hasImage && (
                   <div className="image-placeholder">
-                    Изображение не загружено.<br />
-                    Выберите файл в панели <b>«Загрузка изображения»</b> слева.
+                    Изображение не загружено.
                   </div>
                 )}
 
@@ -323,7 +398,6 @@ export default function App() {
           </div>
         </details>
 
-        {/* ============ ОБЛАСТЬ 2 ============ */}
         <details className="area" open={openAreas.similar} onToggle={toggleArea('similar')}>
           <summary className="area-header">
             <span className="area-num">2</span>
@@ -335,7 +409,6 @@ export default function App() {
           </div>
         </details>
 
-        {/* ============ ОБЛАСТЬ 3 ============ */}
         <details className="area" open={openAreas.video} onToggle={toggleArea('video')}>
           <summary className="area-header">
             <span className="area-num">3</span>
@@ -350,7 +423,6 @@ export default function App() {
             />
           </div>
         </details>
-
       </div>
 
       <video ref={videoElRef} style={{ display: 'none' }} playsInline muted loop />

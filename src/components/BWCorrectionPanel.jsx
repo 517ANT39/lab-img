@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import cv from '@/cv/cvInstance.js';
+import cv from '../cv/cvInstance.js';
 import { toGray, grayToRGB, clamp } from '../cv/utils.js';
 
 function applyLUT(gray, fn) {
@@ -13,7 +13,7 @@ function applyLUT(gray, fn) {
 
 const DEFAULTS = { black: 0, white: 255, gamma: 100 };
 
-export default function BWCorrectionPanel({ applyOp }) {
+export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
   const [black, setBlack] = useState(DEFAULTS.black);
   const [white, setWhite] = useState(DEFAULTS.white);
   const [gamma, setGamma] = useState(DEFAULTS.gamma);
@@ -26,7 +26,7 @@ export default function BWCorrectionPanel({ applyOp }) {
       const rgb = grayToRGB(res);
       g.delete(); res.delete();
       return rgb;
-    }, 'Линейная коррекция');
+    }, 'Линейная коррекция', 'bw');
   };
 
   const doGamma = () => {
@@ -37,7 +37,7 @@ export default function BWCorrectionPanel({ applyOp }) {
       const rgb = grayToRGB(res);
       g.delete(); res.delete();
       return rgb;
-    }, `Гамма γ=${gVal.toFixed(2)}`);
+    }, `Гамма γ=${gVal.toFixed(2)}`, 'bw');
   };
 
   const doLog = () => {
@@ -47,7 +47,7 @@ export default function BWCorrectionPanel({ applyOp }) {
       const rgb = grayToRGB(res);
       g.delete(); res.delete();
       return rgb;
-    }, 'Логарифмическая коррекция');
+    }, 'Логарифмическая коррекция', 'bw');
   };
 
   const doExp = () => {
@@ -58,13 +58,14 @@ export default function BWCorrectionPanel({ applyOp }) {
       const rgb = grayToRGB(res);
       g.delete(); res.delete();
       return rgb;
-    }, 'Экспоненциальная коррекция');
+    }, 'Экспоненциальная коррекция', 'bw');
   };
 
   const handleReset = () => {
     setBlack(DEFAULTS.black);
     setWhite(DEFAULTS.white);
     setGamma(DEFAULTS.gamma);
+    resetPanel('bw', 'Коррекция Ч/Б');
   };
 
   return (
@@ -88,7 +89,9 @@ export default function BWCorrectionPanel({ applyOp }) {
         </div>
 
         <div className="btn-row">
-          <button className="sec" onClick={handleReset}>↺ Сбросить параметры</button>
+          <button className={hasChanges ? 'green' : 'sec'} onClick={handleReset}>
+            {hasChanges ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
+          </button>
         </div>
       </div>
     </details>

@@ -133,8 +133,7 @@ export default function SimilarPanel({ showToast }) {
       <div className="sim-results">
         {images.length === 0 && !loading && (
           <div className="sim-empty">
-            Загрузите 3–10 изображений слева,<br />
-            затем нажмите <b>«Найти 2 самых похожих»</b>.
+            Изображений нет.
           </div>
         )}
 
