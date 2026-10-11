@@ -15,6 +15,7 @@ import FiltersPanel from './components/FiltersPanel.jsx';
 import EdgePanel from './components/EdgePanel.jsx';
 import KeypointsPanel from './components/KeypointsPanel.jsx';
 import VideoPanel from './components/VideoPanel.jsx';
+import SimilarPanel from './components/SimilarPanel.jsx';
 
 export default function App() {
   const { ready } = useOpenCV();
@@ -25,6 +26,12 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [historyLen, setHistoryLen] = useState(0);
 
+  const [openAreas, setOpenAreas] = useState({
+    image: true,
+    similar: true,
+    video: true
+  });
+
   const mats = useRef({
     orig: null,
     cur: null,
@@ -33,9 +40,7 @@ export default function App() {
     history: []
   });
 
-  const cvOriginalRef = useRef(null);
   const cvResultRef = useRef(null);
-  const histBeforeRef = useRef(null);
   const histAfterRef = useRef(null);
   const videoCanvasRef = useRef(null);
   const videoElRef = useRef(null);
@@ -47,11 +52,20 @@ export default function App() {
   }, []);
 
   const refreshDisplay = useCallback(() => {
-    showMat(mats.current.cur, cvResultRef.current);
-    drawHistogram(histBeforeRef.current, mats.current.before, channels);
-    drawHistogram(histAfterRef.current, mats.current.cur, channels);
+    if (openAreas.image) {
+      showMat(mats.current.cur, cvResultRef.current);
+      drawHistogram(histAfterRef.current, mats.current.cur, channels);
+    }
     setHistoryLen(mats.current.history.length);
-  }, [channels]);
+  }, [channels, openAreas.image]);
+
+  // При разворачивании области 1 — перерисовать canvas
+  useEffect(() => {
+    if (openAreas.image && mats.current.cur) {
+      showMat(mats.current.cur, cvResultRef.current);
+      drawHistogram(histAfterRef.current, mats.current.cur, channels);
+    }
+  }, [openAreas.image, channels]);
 
   const clearHistory = useCallback(() => {
     const m = mats.current;
@@ -107,7 +121,8 @@ export default function App() {
           channelsSource: hasAlpha ? 4 : 3
         });
 
-        showMat(m.orig, cvOriginalRef.current);
+        setOpenAreas((s) => s.image ? s : { ...s, image: true });
+
         refreshDisplay();
         showToast('Изображение загружено');
         URL.revokeObjectURL(url);
@@ -194,112 +209,148 @@ export default function App() {
     );
   }
 
+  const hasImage = !!mats.current.cur;
+
+  // ВАЖНО: игнорируем события toggle от вложенных <details>
+  const toggleArea = (key) => (e) => {
+    if (e.target !== e.currentTarget) return;
+    setOpenAreas((s) => ({ ...s, [key]: e.target.open }));
+  };
+
   return (
     <>
       <div id="app">
-        <aside id="sidebar">
-          <h2>⚙ Обработка изображений</h2>
 
-          <Section title="1. Загрузка изображения" defaultOpen>
-            <input type="file" accept="image/*"
-              onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])} />
-            <div className="btn-row">
-              <button className="sec" onClick={handleReset}>↺ Сбросить к исходному</button>
-              <button className="sec" onClick={handleUndo}>↶ Откатить ({historyLen})</button>
-            </div>
-            <div className="hint">Клик по результату — «пипетка».</div>
-          </Section>
+        {/* ============ ОБЛАСТЬ 1 ============ */}
+        <details className="area" open={openAreas.image} onToggle={toggleArea('image')}>
+          <summary className="area-header">
+            <span className="area-num">1</span>
+            <h2>Обработка изображений</h2>
+            <span className="area-chevron" aria-hidden="true">▾</span>
+          </summary>
 
-          <Section title="2. Информация об изображении" defaultOpen>
-            <ImageInfo meta={meta} curRGB={mats.current.cur} />
-          </Section>
+          <div className="area-body area-image-body">
+            <aside className="controls">
+              <Section title="Загрузка изображения" defaultOpen>
+                <input type="file" accept="image/*"
+                  onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])} />
+                <div className="btn-row">
+                  <button className="sec" onClick={handleReset}>↺ Сброс</button>
+                  <button className="sec" onClick={handleUndo}>↶ Откат ({historyLen})</button>
+                </div>
+                <div className="hint">Клик по изображению — «пипетка».</div>
+              </Section>
 
-          <Section title="3. Цветовые модели и профиль" defaultOpen>
-            <ColorProfileSelector profile={profile} onChange={setProfile} />
-            <div style={{ height: 12 }} />
-            <ColorModelPanel profile={profile} pixel={pixel} onPixelChange={setPixel} />
-          </Section>
+              <Section title="Информация об изображении" defaultOpen>
+                <ImageInfo meta={meta} curRGB={mats.current.cur} />
+              </Section>
 
-          <Section title="4. Градации серого">
-            <button onClick={() => applyOp((src) => grayToRGB(toGray(src)), 'Полутоновое')}>
-              Преобразовать в оттенки серого
-            </button>
-          </Section>
+              <Section title="Цветовые модели и профиль" defaultOpen>
+                <ColorProfileSelector profile={profile} onChange={setProfile} />
+                <div style={{ height: 12 }} />
+                <ColorModelPanel profile={profile} pixel={pixel} onPixelChange={setPixel} />
+              </Section>
 
-          <AdjustPanel mats={mats} refreshDisplay={refreshDisplay} showToast={showToast} />
+              <Section title="Градации серого">
+                <button onClick={() => applyOp((src) => grayToRGB(toGray(src)), 'Полутоновое')}>
+                  Преобразовать в оттенки серого
+                </button>
+              </Section>
 
-          <Section title="6. Гистограмма (каналы)">
-            <div className="grid3">
-              {['r', 'g', 'b'].map((c) => (
-                <label key={c} style={{ margin: 0 }}>
-                  <input type="checkbox" checked={channels[c]}
-                    onChange={(e) => {
-                      const nc = { ...channels, [c]: e.target.checked };
-                      setChannels(nc);
-                      drawHistogram(histBeforeRef.current, mats.current.before, nc);
-                      drawHistogram(histAfterRef.current, mats.current.cur, nc);
-                    }} />
-                  {' '}{c.toUpperCase()}
-                </label>
-              ))}
-            </div>
-          </Section>
+              <AdjustPanel mats={mats} refreshDisplay={refreshDisplay} showToast={showToast} />
+              <BWCorrectionPanel applyOp={applyOp} />
+              <MorphologyPanel applyOp={applyOp} />
+              <FiltersPanel applyOp={applyOp} />
+              <EdgePanel applyOp={applyOp} />
+              <KeypointsPanel applyOp={applyOp} showToast={showToast} />
+            </aside>
 
-          <BWCorrectionPanel applyOp={applyOp} />
-          <MorphologyPanel applyOp={applyOp} />
-          <FiltersPanel applyOp={applyOp} />
-          <EdgePanel applyOp={applyOp} />
-          <KeypointsPanel applyOp={applyOp} showToast={showToast} />
-          <VideoPanel showToast={showToast} videoElRef={videoElRef} videoCanvasRef={videoCanvasRef} />
-        </aside>
+            <div className="viewer">
+              <div className="pane pane-image">
+                <div className="pane-title">
+                  <span>Изображение</span>
+                  <span>
+                    {mats.current.cur
+                      ? `${mats.current.cur.cols} × ${mats.current.cur.rows}`
+                      : (meta ? `${meta.width} × ${meta.height}` : '')}
+                  </span>
+                </div>
 
-        <main>
-          <div className="viewer">
-            <div className="pane">
-              <div className="pane-title">
-                <span>Исходное изображение</span>
-                <span>{meta ? `${meta.width} × ${meta.height}` : ''}</span>
+                {!hasImage && (
+                  <div className="image-placeholder">
+                    Изображение не загружено.<br />
+                    Выберите файл в панели <b>«Загрузка изображения»</b> слева.
+                  </div>
+                )}
+
+                <canvas
+                  ref={cvResultRef}
+                  style={{ display: hasImage ? 'block' : 'none' }}
+                  onClick={(e) => {
+                    const m = mats.current.cur;
+                    if (!m) return;
+                    const rect = e.target.getBoundingClientRect();
+                    const x = Math.floor((e.clientX - rect.left) * m.cols / rect.width);
+                    const y = Math.floor((e.clientY - rect.top) * m.rows / rect.height);
+                    if (x < 0 || y < 0 || x >= m.cols || y >= m.rows) return;
+                    const px = m.ucharPtr(y, x);
+                    setPixel({ r: px[0], g: px[1], b: px[2] });
+                    showToast(`Пиксель (${x},${y}) = RGB(${px[0]},${px[1]},${px[2]})`);
+                  }}
+                />
               </div>
-              <canvas ref={cvOriginalRef} />
-            </div>
-            <div className="pane">
-              <div className="pane-title">
-                <span>Результат</span>
-                <span>{mats.current.cur ? `${mats.current.cur.cols} × ${mats.current.cur.rows}` : ''}</span>
+
+              <div className="pane pane-hist">
+                <div className="pane-title">
+                  <span>Гистограмма</span>
+                  <div className="hist-channels">
+                    {['r', 'g', 'b'].map((c) => (
+                      <label key={c} className={`ch ch-${c} ${channels[c] ? 'on' : ''}`}>
+                        <input type="checkbox" checked={channels[c]}
+                          onChange={(e) => {
+                            const nc = { ...channels, [c]: e.target.checked };
+                            setChannels(nc);
+                            drawHistogram(histAfterRef.current, mats.current.cur, nc);
+                          }} />
+                        {c.toUpperCase()}
+                      </label>
+                    ))}
+                  </div>
+                </div>
+                <canvas ref={histAfterRef} />
               </div>
-              <canvas
-                ref={cvResultRef}
-                onClick={(e) => {
-                  const m = mats.current.cur;
-                  if (!m) return;
-                  const rect = e.target.getBoundingClientRect();
-                  const x = Math.floor((e.clientX - rect.left) * m.cols / rect.width);
-                  const y = Math.floor((e.clientY - rect.top) * m.rows / rect.height);
-                  if (x < 0 || y < 0 || x >= m.cols || y >= m.rows) return;
-                  const px = m.ucharPtr(y, x);
-                  setPixel({ r: px[0], g: px[1], b: px[2] });
-                  showToast(`Пиксель (${x},${y}) = RGB(${px[0]},${px[1]},${px[2]})`);
-                }}
-              />
             </div>
           </div>
+        </details>
 
-          <div className="hist-row">
-            <div className="pane">
-              <div className="pane-title">Гистограмма «ДО»</div>
-              <canvas ref={histBeforeRef} />
-            </div>
-            <div className="pane">
-              <div className="pane-title">Гистограмма «ПОСЛЕ»</div>
-              <canvas ref={histAfterRef} />
-            </div>
+        {/* ============ ОБЛАСТЬ 2 ============ */}
+        <details className="area" open={openAreas.similar} onToggle={toggleArea('similar')}>
+          <summary className="area-header">
+            <span className="area-num">2</span>
+            <h2>Поиск похожих изображений</h2>
+            <span className="area-chevron" aria-hidden="true">▾</span>
+          </summary>
+          <div className="area-body">
+            <SimilarPanel showToast={showToast} />
           </div>
+        </details>
 
-          <div className="pane" id="videoPanel" style={{ marginTop: 12 }}>
-            <div className="pane-title"><span>Обработка видео</span></div>
-            <canvas ref={videoCanvasRef} />
+        {/* ============ ОБЛАСТЬ 3 ============ */}
+        <details className="area" open={openAreas.video} onToggle={toggleArea('video')}>
+          <summary className="area-header">
+            <span className="area-num">3</span>
+            <h2>Работа с видео</h2>
+            <span className="area-chevron" aria-hidden="true">▾</span>
+          </summary>
+          <div className="area-body">
+            <VideoPanel
+              showToast={showToast}
+              videoElRef={videoElRef}
+              videoCanvasRef={videoCanvasRef}
+            />
           </div>
-        </main>
+        </details>
+
       </div>
 
       <video ref={videoElRef} style={{ display: 'none' }} playsInline muted loop />

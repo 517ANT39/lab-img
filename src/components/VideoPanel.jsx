@@ -1,10 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
-import cv from '@/cv/cvInstance.js';
+import cv from '../cv/cvInstance.js';
 
-export default function VideoPanel({ showToast, videoCanvasRef, videoElRef }) {
+export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
   const [mode, setMode] = useState('bg');
   const [blur, setBlur] = useState(21);
   const [running, setRunning] = useState(false);
+  const [loadedName, setLoadedName] = useState('');
   const fgbgRef = useRef(null);
   const vidCanvasRef = useRef(null);
   const vidCtxRef = useRef(null);
@@ -14,7 +15,9 @@ export default function VideoPanel({ showToast, videoCanvasRef, videoElRef }) {
     if (!v || !file) return;
     v.src = URL.createObjectURL(file);
     v.play().catch(() => {});
+    if (fgbgRef.current) fgbgRef.current.delete();
     fgbgRef.current = new cv.BackgroundSubtractorMOG2(500, 24, false);
+    setLoadedName(file.name);
     showToast('Видео загружено. Нажмите «Старт».');
   };
 
@@ -111,37 +114,68 @@ export default function VideoPanel({ showToast, videoCanvasRef, videoElRef }) {
   }, [running]);
 
   return (
-    <details>
-      <summary>12. Видео: фон и движение</summary>
-      <div className="body">
-        <input type="file" accept="video/*"
-          onChange={(e) => e.target.files[0] && init(e.target.files[0])} />
-        <label>Режим</label>
-        <select value={mode} onChange={(e) => {
-          setMode(e.target.value);
-          if (fgbgRef.current) {
-            fgbgRef.current.delete();
-            fgbgRef.current = new cv.BackgroundSubtractorMOG2(500, 24, false);
-          }
-        }}>
-          <option value="bg">Вычитание фона (MOG2)</option>
-          <option value="motionblur">Размытие движущихся объектов</option>
-        </select>
-        <label>Сила размытия: {blur}</label>
-        <input type="range" min="3" max="61" step="2" value={blur}
-          onChange={(e) => setBlur(+e.target.value)} />
-        <div className="btn-row">
-          <button className="green" onClick={() => {
-            if (!videoElRef.current?.src) { showToast('Сначала выберите видео'); return; }
-            if (!fgbgRef.current) fgbgRef.current = new cv.BackgroundSubtractorMOG2(500, 24, false);
-            setRunning(true);
-          }}>▶ Старт</button>
-          <button className="danger" onClick={() => {
-            setRunning(false);
-            videoElRef.current?.pause();
-          }}>■ Стоп</button>
+    <div className="video-panel">
+      <div className="pane">
+        <div className="pane-title">
+          <span>Результат обработки</span>
+          {loadedName && <span style={{ fontSize: 11 }}>{loadedName}</span>}
+        </div>
+        <canvas ref={videoCanvasRef} className="video-canvas" />
+      </div>
+
+      <div className="video-settings">
+        <div className="pane">
+          <div className="pane-title"><span>Загрузка видео</span></div>
+          <div className="pane-body">
+            <input type="file" accept="video/*"
+              onChange={(e) => e.target.files[0] && init(e.target.files[0])} />
+          </div>
+        </div>
+
+        <div className="pane">
+          <div className="pane-title"><span>Настройки</span></div>
+          <div className="pane-body">
+            <label>Режим обработки</label>
+            <select value={mode} onChange={(e) => {
+              setMode(e.target.value);
+              if (fgbgRef.current) {
+                fgbgRef.current.delete();
+                fgbgRef.current = new cv.BackgroundSubtractorMOG2(500, 24, false);
+              }
+            }}>
+              <option value="bg">Вычитание фона (MOG2)</option>
+              <option value="motionblur">Размытие движущихся объектов</option>
+            </select>
+
+            <label style={{ marginTop: 10 }}>Сила размытия: {blur}</label>
+            <input type="range" min="3" max="61" step="2" value={blur}
+              onChange={(e) => setBlur(+e.target.value)}
+              disabled={mode !== 'motionblur'} />
+
+            <div className="btn-row" style={{ marginTop: 10 }}>
+              <button className="green" disabled={running} onClick={() => {
+                if (!videoElRef.current?.src) { showToast('Сначала выберите видео'); return; }
+                if (!fgbgRef.current) fgbgRef.current = new cv.BackgroundSubtractorMOG2(500, 24, false);
+                setRunning(true);
+              }}>▶ Старт</button>
+              <button className="danger" disabled={!running} onClick={() => {
+                setRunning(false);
+                videoElRef.current?.pause();
+              }}>■ Стоп</button>
+            </div>
+          </div>
+        </div>
+
+        <div className="pane">
+          <div className="pane-title"><span>Справка</span></div>
+          <div className="pane-body">
+            <div className="hint">
+              <b>Вычитание фона</b> — оставляет только движущиеся объекты.<br />
+              <b>Размытие движущихся</b> — размывает всё, что движется.
+            </div>
+          </div>
         </div>
       </div>
-    </details>
+    </div>
   );
 }
