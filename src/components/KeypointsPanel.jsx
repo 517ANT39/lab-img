@@ -1,21 +1,48 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import cv from '../cv/cvInstance.js';
 import jsfeat from '@webarkit/jsfeat-next';
-import { toGray } from '../cv/utils.js';
+import { toGray, showMat } from '../cv/utils.js';
 
 const DEFAULTS = { type: 'harris', th: 25 };
 
-export default function KeypointsPanel({ mats, refreshDisplay, showToast }) {
+export default function KeypointsPanel({ mats, canvasRef, showToast }) {
   const [type, setType] = useState(DEFAULTS.type);
   const [th, setTh] = useState(DEFAULTS.th);
+  const [points, setPoints] = useState([]);
+
+  // Перерисовка canvas при изменении points
+  useEffect(() => {
+    const m = mats.current;
+    const c = canvasRef && canvasRef.current;
+    if (!m || !m.cur || !c) return;
+
+    // 1. Показать изображение
+    showMat(m.cur, c);
+
+    // 2. Нарисовать точки поверх
+    if (points.length === 0) return;
+    const ctx = c.getContext('2d');
+    for (const p of points) {
+      // Внешний кружок
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255,40,40,1)';
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Внутренняя точка
+      ctx.beginPath();
+      ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+      ctx.fillStyle = 'rgba(255,255,0,1)';
+      ctx.fill();
+    }
+  }, [points]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = () => {
     const m = mats.current;
     if (!m || !m.cur) { showToast('Сначала загрузите изображение'); return; }
 
-    // ---- Детекция точек ----
     const g = toGray(m.cur);
-    const points = [];
+    const detected = [];
     try {
       if (type === 'harris') {
         const dst = new cv.Mat();
@@ -28,7 +55,7 @@ export default function KeypointsPanel({ mats, refreshDisplay, showToast }) {
         for (let y = 0; y < dst.rows; y++) {
           for (let x = 0; x < dst.cols; x++) {
             const v = dst.floatAt(y, x);
-            if (v === dil.floatAt(y, x) && v > thr) points.push({ x, y });
+            if (v === dil.floatAt(y, x) && v > thr) detected.push({ x, y });
           }
         }
         dst.delete(); dil.delete(); k.delete();
@@ -41,7 +68,7 @@ export default function KeypointsPanel({ mats, refreshDisplay, showToast }) {
         const corners = [];
         for (let i = 0; i < 500; i++) corners[i] = new jsfeat.keypoint_t(0, 0, 0, 0, 0);
         const count = jsfeat.fast_corners.detect(imgU8, corners, 3);
-        for (let i = 0; i < count; i++) points.push({ x: corners[i].x, y: corners[i].y });
+        for (let i = 0; i < count; i++) detected.push({ x: corners[i].x, y: corners[i].y });
       } else if (type === 'orb') {
         const orb = new cv.ORB(500);
         const kp = new cv.KeyPointVector();
@@ -49,7 +76,7 @@ export default function KeypointsPanel({ mats, refreshDisplay, showToast }) {
         orb.detect(g, kp, mask);
         for (let i = 0; i < kp.size(); i++) {
           const p = kp.get(i);
-          points.push({ x: Math.round(p.pt.x), y: Math.round(p.pt.y) });
+          detected.push({ x: Math.round(p.pt.x), y: Math.round(p.pt.y) });
         }
         kp.delete(); mask.delete(); orb.delete();
       }
@@ -61,56 +88,24 @@ export default function KeypointsPanel({ mats, refreshDisplay, showToast }) {
     }
     g.delete();
 
-    if (points.length === 0) {
+    if (detected.length === 0) {
       showToast('Не найдены — уменьшите порог');
       return;
     }
 
-    // ---- База keypoints: отдельное поле, не связанное с panelBases ----
-    // Создаётся один раз — до первой отрисовки точек
-    if (!m.kpBase) {
-      m.kpBase = m.cur.clone();
-    }
-
-    // ---- Рисуем точки на копии текущего ----
-    const out = m.cur.clone();
-    for (const p of points) {
-      cv.circle(out, new cv.Point(p.x, p.y), 4, new cv.Scalar(255, 40, 40), 2, cv.LINE_AA);
-      cv.circle(out, new cv.Point(p.x, p.y), 1, new cv.Scalar(255, 255, 0), 1, cv.LINE_AA);
-    }
-
-    // ---- Подмена cur ----
-    const oldCur = m.cur;
-    m.cur = out;
-    try { oldCur.delete(); } catch (_) {}
-
-    refreshDisplay();
-    showToast(`Найдено точек: ${points.length}`);
+    // Только setState — точка появится через useEffect
+    setPoints(detected);
+    showToast(`Найдено точек: ${detected.length}`);
   };
 
   const handleReset = () => {
-    const m = mats.current;
-    if (!m) return;
-
-    if (m.kpBase) {
-      // Восстанавливаем из kpBase — изображение ДО первой отрисовки точек
-      const res = m.kpBase.clone();
-      const oldCur = m.cur;
-      m.cur = res;
-      try { oldCur.delete(); } catch (_) {}
-      try { m.kpBase.delete(); } catch (_) {}
-      m.kpBase = null;
-      refreshDisplay();
-      showToast('Ключевые точки отменены');
-    } else {
-      setType(DEFAULTS.type);
-      setTh(DEFAULTS.th);
-      showToast('Параметры сброшены');
-    }
+    setPoints([]);
+    setType(DEFAULTS.type);
+    setTh(DEFAULTS.th);
+    showToast('Ключевые точки отменены');
   };
 
-  // Флаг для кнопки — читается каждый рендер
-  const hasBase = !!(mats.current && mats.current.kpBase);
+  const hasBase = points.length > 0;
 
   return (
     <details>
@@ -123,7 +118,8 @@ export default function KeypointsPanel({ mats, refreshDisplay, showToast }) {
           <option value="orb">ORB — OpenCV</option>
         </select>
         <label>Порог: {th}</label>
-        <input type="range" min="1" max="120" value={th} onChange={(e) => setTh(+e.target.value)} />
+        <input type="range" min="1" max="120" value={th}
+          onChange={(e) => setTh(+e.target.value)} />
         <button style={{ marginTop: 8 }} onClick={run}>Найти ключевые точки</button>
 
         <div className="btn-row">

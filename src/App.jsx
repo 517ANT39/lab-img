@@ -51,10 +51,12 @@ export default function App() {
     showToast._t = setTimeout(() => setToast(''), ms);
   }, []);
 
+  // Форсирует перерисовку App
   const refreshDisplay = useCallback(() => {
     setTick(t => t + 1);
   }, []);
 
+  // Отрисовка canvas и гистограммы при каждом изменении tick/каналов/области
   useEffect(() => {
     if (mats.current.cur && cvResultRef.current) {
       showMat(mats.current.cur, cvResultRef.current);
@@ -64,6 +66,7 @@ export default function App() {
     }
   }, [tick, channels, openAreas.image]);
 
+  // Очистить историю, все базы панелей и базу keypoints
   const clearAllBases = useCallback(() => {
     const m = mats.current;
     while (m.history.length) {
@@ -74,8 +77,10 @@ export default function App() {
       try { m.panelBases[k].delete(); } catch (_) { }
     }
     m.panelBases = {};
+    if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
   }, []);
 
+  // Удалить базы всех панелей, кроме указанной
   const clearOtherBases = useCallback((keepKey) => {
     const m = mats.current;
     for (const k in m.panelBases) {
@@ -83,8 +88,14 @@ export default function App() {
       try { m.panelBases[k].delete(); } catch (_) { }
       delete m.panelBases[k];
     }
+    // Если операция не от keypoints — сбрасываем kpBase тоже
+    if (keepKey !== 'keypoints' && m.kpBase) {
+      try { m.kpBase.delete(); } catch (_) { }
+      m.kpBase = null;
+    }
   }, []);
 
+  // ---- Загрузка изображения ----
   const handleFileUpload = useCallback((file) => {
     if (!file || !file.type.startsWith('image/')) { showToast('Это не изображение'); return; }
     const url = URL.createObjectURL(file);
@@ -114,7 +125,6 @@ export default function App() {
         if (m.cur) m.cur.delete();
         if (m.before) m.before.delete();
         if (m.base) m.base.delete();
-        if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
         clearAllBases();
 
         m.orig = rgb;
@@ -144,13 +154,13 @@ export default function App() {
     img.src = url;
   }, [refreshDisplay, showToast, clearAllBases]);
 
+  // ---- Сброс к исходному ----
   const handleReset = useCallback(() => {
     const m = mats.current;
     if (!m.orig) { showToast('Изображение не загружено'); return; }
     if (m.cur) m.cur.delete();
     if (m.before) m.before.delete();
     if (m.base) m.base.delete();
-    if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
     clearAllBases();
     m.cur = m.orig.clone();
     m.before = null;
@@ -159,6 +169,7 @@ export default function App() {
     showToast('Сброшено к исходному');
   }, [refreshDisplay, showToast, clearAllBases]);
 
+  // ---- Глобальный откат ----
   const handleUndo = useCallback(() => {
     const m = mats.current;
     if (!m.history.length) { showToast('Нечего откатывать'); return; }
@@ -167,20 +178,16 @@ export default function App() {
     m.before = m.cur;
     m.cur = prev;
     if (m.base) { m.base.delete(); m.base = null; }
-    if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
     clearAllBases();
     refreshDisplay();
     showToast('Откат выполнен');
   }, [refreshDisplay, showToast, clearAllBases]);
 
-  // Панели 7-10 используют panelKey для своей отмены.
-  // Панель 11 не передаёт panelKey — она сама управляет своим кэшем.
+  // ---- Применение операции для панелей 4, 7-10 ----
   const applyOp = useCallback((fn, opName, panelKey) => {
     const m = mats.current;
     if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
 
-
-    if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
     let out;
     try { out = fn(m.cur); }
     catch (e) {
@@ -190,6 +197,7 @@ export default function App() {
     }
     if (!out) { showToast('Пустой результат'); return; }
 
+    // База панели — из СТАРОГО cur, ДО подмены
     if (panelKey) {
       clearOtherBases(panelKey);
       if (!m.panelBases[panelKey]) {
@@ -218,6 +226,7 @@ export default function App() {
     if (opName) showToast(opName);
   }, [refreshDisplay, showToast, clearOtherBases]);
 
+  // ---- Отмена операции панели ----
   const resetPanel = useCallback((panelKey, label) => {
     const m = mats.current;
     if (!m.cur) { showToast('Изображение не загружено'); return; }
@@ -259,7 +268,6 @@ export default function App() {
   const hasBaseMorph = !!(mats.current.panelBases && mats.current.panelBases.morph);
   const hasBaseFilters = !!(mats.current.panelBases && mats.current.panelBases.filters);
   const hasBaseEdge = !!(mats.current.panelBases && mats.current.panelBases.edge);
-  const hasBaseKeypoints = !!(mats.current.panelBases && mats.current.panelBases.keypoints);
 
   return (
     <>
@@ -278,7 +286,9 @@ export default function App() {
                   onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])} />
                 <div className="btn-row">
                   <button className="sec" onClick={handleReset}>↺ Сброс</button>
-                  <button className="sec" onClick={handleUndo}>↶ Откат ({mats.current.history.length})</button>
+                  <button className="sec" onClick={handleUndo}>
+                    ↶ Откат ({mats.current.history.length})
+                  </button>
                 </div>
                 <div className="hint">Клик по изображению — «пипетка».</div>
               </Section>
@@ -299,37 +309,41 @@ export default function App() {
                 </button>
               </Section>
 
-              <AdjustPanel mats={mats} refreshDisplay={refreshDisplay} showToast={showToast} />
+              <AdjustPanel
+                mats={mats}
+                refreshDisplay={refreshDisplay}
+                resetPanel={resetPanel}
+                showToast={showToast}
+              />
 
               <BWCorrectionPanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasChanges={hasBaseBW}
+                hasBase={hasBaseBW}
               />
               <MorphologyPanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasChanges={hasBaseMorph}
+                hasBase={hasBaseMorph}
               />
               <FiltersPanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasChanges={hasBaseFilters}
+                hasBase={hasBaseFilters}
               />
               <EdgePanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasChanges={hasBaseEdge}
+                hasBase={hasBaseEdge}
               />
 
-              {/* Панель 11 — независимая, со своим кэшем */}
               <KeypointsPanel
                 mats={mats}
-                refreshDisplay={refreshDisplay}
+                canvasRef={cvResultRef}
                 showToast={showToast}
               />
             </aside>
@@ -347,12 +361,12 @@ export default function App() {
 
                 {!hasImage && (
                   <div className="image-placeholder">
-                    Изображение не загружено.
+                    Изображение не загружено.<br />
+                    Выберите файл в панели «Загрузка изображения» слева.
                   </div>
                 )}
 
                 <canvas
-                  key={`cv-${tick}`}
                   ref={cvResultRef}
                   style={{ display: hasImage ? 'block' : 'none' }}
                   onClick={(e) => {
@@ -406,7 +420,11 @@ export default function App() {
             <span className="area-chevron">▾</span>
           </summary>
           <div className="area-body">
-            <VideoPanel showToast={showToast} videoElRef={videoElRef} videoCanvasRef={videoCanvasRef} />
+            <VideoPanel
+              showToast={showToast}
+              videoElRef={videoElRef}
+              videoCanvasRef={videoCanvasRef}
+            />
           </div>
         </details>
       </div>

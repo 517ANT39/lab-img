@@ -70,7 +70,7 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
 
   return (
     <details>
-      <summary>7. Коррекция Ч/Б изображения</summary>
+      <summary>Коррекция Ч/Б изображения</summary>
       <div className="body">
         <div style={{ fontWeight: 600, fontSize: 12 }}>Линейная (растяжение уровней)</div>
         <label>Чёрная точка: {black}</label>

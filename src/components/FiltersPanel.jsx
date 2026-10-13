@@ -66,7 +66,7 @@ export default function FiltersPanel({ applyOp, resetPanel, hasChanges }) {
 
   return (
     <details>
-      <summary>9. Фильтры и эффекты</summary>
+      <summary>Фильтры и эффекты</summary>
       <div className="body">
         <label>Резкость: {(sharp / 100).toFixed(1)}</label>
         <input type="range" min="10" max="300" value={sharp} onChange={(e) => setSharp(+e.target.value)} />

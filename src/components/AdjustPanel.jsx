@@ -80,7 +80,7 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
 
   return (
     <details>
-      <summary>5. Яркость / Насыщенность / Контраст</summary>
+      <summary>Яркость / Насыщенность / Контраст</summary>
       <div className="body">
         <label>Яркость: {bri}</label>
         <input

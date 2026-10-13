@@ -39,7 +39,7 @@ export default function MorphologyPanel({ applyOp, resetPanel, hasChanges }) {
 
   return (
     <details>
-      <summary>8. Морфологические операции</summary>
+      <summary>Морфологические операции</summary>
       <div className="body">
         <label>Операция</label>
         <select value={op} onChange={(e) => setOp(e.target.value)}>

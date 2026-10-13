@@ -48,7 +48,7 @@ export default function EdgePanel({ applyOp, resetPanel, hasChanges }) {
 
   return (
     <details>
-      <summary>10. Детекторы границ</summary>
+      <summary>Детекторы границ</summary>
       <div className="body">
         <label>Canny — нижний порог: {t1}</label>
         <input type="range" min="0" max="255" value={t1} onChange={(e) => setT1(+e.target.value)} />

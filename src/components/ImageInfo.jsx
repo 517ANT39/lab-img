@@ -29,7 +29,7 @@ function computeDepthInfo(meta, curRGB) {
     workingTypeName,
     workingLabel: `${workingTotal} бит (${workingBpc} бит/канал × ${workingCh}, ${chLabel})`,
     sourceTotal,
-    sourceLabel: `${sourceTotal} бит (${sourceBpc} × ${sourceCh}${sourceAlphaNote})`,
+    sourceLabel: `${sourceTotal} бит`,
     channelsLabel: `${workingCh} (${chLabel})`,
     bytesPerPixel: (workingTotal / 8).toFixed(2)
   };
@@ -64,21 +64,7 @@ export default function ImageInfo({ meta, curRGB }) {
     ['Формат', (meta.type.split('/')[1] || '?').toUpperCase()],
     ['Размер на диске', fmtB(meta.size)],
     ['Разрешение', `${W} × ${H} px`],
-    ['Мегапикселей', (W * H / 1e6).toFixed(2) + ' Мп'],
-    ['Соотношение сторон', `${W / g} : ${H / g}`],
-
-    // === Глубина цвета ===
-    ['Глубина цвета (файл)', depth.sourceLabel],
-    ['Глубина цвета (рабочая)', depth.workingLabel],
-    ['Бит на пиксель', depth.workingTotal],
-    ['Байт на пиксель', depth.bytesPerPixel],
-    ['Тип данных', depth.workingTypeName],
-    ['Каналов', depth.channelsLabel],
-
-    ['Средний R/G/B', `${mR} / ${mG} / ${mB}`],
-    ['Средняя яркость', brightness],
-    ['Средний контраст (σ)', contrast],
-    ['Несжатый объём', fmtB(W * H * (depth.workingTotal / 8))]
+    ['Глубина цвета', depth.sourceLabel],
   ];
 
   return (
