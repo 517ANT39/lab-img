@@ -179,6 +179,8 @@ export default function App() {
     const m = mats.current;
     if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
 
+
+    if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
     let out;
     try { out = fn(m.cur); }
     catch (e) {
@@ -327,9 +329,7 @@ export default function App() {
               {/* Панель 11 — независимая, со своим кэшем */}
               <KeypointsPanel
                 mats={mats}
-                applyOp={applyOp}
-                resetPanel={resetPanel}
-                hasChanges={hasBaseKeypoints}
+                refreshDisplay={refreshDisplay}
                 showToast={showToast}
               />
             </aside>

@@ -5,7 +5,7 @@ import { toGray } from '../cv/utils.js';
 
 const DEFAULTS = { type: 'harris', th: 25 };
 
-export default function KeypointsPanel({ mats, applyOp, resetPanel, hasBase, showToast }) {
+export default function KeypointsPanel({ mats, refreshDisplay, showToast }) {
   const [type, setType] = useState(DEFAULTS.type);
   const [th, setTh] = useState(DEFAULTS.th);
 
@@ -66,22 +66,51 @@ export default function KeypointsPanel({ mats, applyOp, resetPanel, hasBase, sho
       return;
     }
 
-    // ---- Через applyOp, с panelKey='keypoints' — как все панели ----
-    applyOp((src) => {
-      const out = src.clone();
-      for (const p of points) {
-        cv.circle(out, new cv.Point(p.x, p.y), 4, new cv.Scalar(255, 40, 40), 2, cv.LINE_AA);
-        cv.circle(out, new cv.Point(p.x, p.y), 1, new cv.Scalar(255, 255, 0), 1, cv.LINE_AA);
-      }
-      return out;
-    }, `Найдено точек: ${points.length}`, 'keypoints');
+    // ---- База keypoints: отдельное поле, не связанное с panelBases ----
+    // Создаётся один раз — до первой отрисовки точек
+    if (!m.kpBase) {
+      m.kpBase = m.cur.clone();
+    }
+
+    // ---- Рисуем точки на копии текущего ----
+    const out = m.cur.clone();
+    for (const p of points) {
+      cv.circle(out, new cv.Point(p.x, p.y), 4, new cv.Scalar(255, 40, 40), 2, cv.LINE_AA);
+      cv.circle(out, new cv.Point(p.x, p.y), 1, new cv.Scalar(255, 255, 0), 1, cv.LINE_AA);
+    }
+
+    // ---- Подмена cur ----
+    const oldCur = m.cur;
+    m.cur = out;
+    try { oldCur.delete(); } catch (_) {}
+
+    refreshDisplay();
+    showToast(`Найдено точек: ${points.length}`);
   };
 
   const handleReset = () => {
-    setType(DEFAULTS.type);
-    setTh(DEFAULTS.th);
-    resetPanel('keypoints', 'Ключевые точки');
+    const m = mats.current;
+    if (!m) return;
+
+    if (m.kpBase) {
+      // Восстанавливаем из kpBase — изображение ДО первой отрисовки точек
+      const res = m.kpBase.clone();
+      const oldCur = m.cur;
+      m.cur = res;
+      try { oldCur.delete(); } catch (_) {}
+      try { m.kpBase.delete(); } catch (_) {}
+      m.kpBase = null;
+      refreshDisplay();
+      showToast('Ключевые точки отменены');
+    } else {
+      setType(DEFAULTS.type);
+      setTh(DEFAULTS.th);
+      showToast('Параметры сброшены');
+    }
   };
+
+  // Флаг для кнопки — читается каждый рендер
+  const hasBase = !!(mats.current && mats.current.kpBase);
 
   return (
     <details>
