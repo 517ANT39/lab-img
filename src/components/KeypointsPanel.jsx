@@ -1,9 +1,141 @@
-import { useState, useEffect, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import cv from '../cv/cvInstance.js';
 import jsfeat from '@webarkit/jsfeat-next';
 import { toGray, showMat } from '../cv/utils.js';
 
 const DEFAULTS = { type: 'harris', th: 25 };
+
+/**
+ * Самописная реализация детектора SIFT.
+ * Построение гауссовой пирамиды + DoG (разность гауссов) → поиск экстремумов
+ * по 26 соседям (x, y, scale) → фильтр по контрасту → дедупликация.
+ *
+ * Это детектор ключевых точек (без дескрипторов и ориентации) —
+ * именно то, что требуется в задании «выделение ключевых точек».
+ */
+function detectSIFT(grayU8, threshold) {
+  const points = [];
+
+  // Параметры SIFT
+  const NUM_OCTAVES = 3;         // количество октав
+  const SCALES_PER_OCTAVE = 3;   // s (масштабов на октаву)
+  const SIGMA = 1.6;             // начальная сигма
+  const K = Math.pow(2, 1 / SCALES_PER_OCTAVE);
+  const BORDER = 8;              // игнорируем края
+  // Порог контраста — от значения слайдера (0..120)
+  // Меньше порог → больше точек
+  const CONTRAST_THRESHOLD = Math.max(0.5, threshold * 0.15);
+
+  // Работаем в CV_32F (иначе DoG даст отрицательные значения неправильно)
+  const baseFloat = new cv.Mat();
+  grayU8.convertTo(baseFloat, cv.CV_32F);
+
+  let currentBase = baseFloat.clone();
+
+  try {
+    for (let o = 0; o < NUM_OCTAVES; o++) {
+      // Для не-первой октавы — уменьшаем изображение вдвое
+      if (o > 0) {
+        const ds = new cv.Mat();
+        cv.resize(currentBase, ds,
+          new cv.Size(
+            Math.max(4, Math.floor(currentBase.cols / 2)),
+            Math.max(4, Math.floor(currentBase.rows / 2))
+          ),
+          0, 0, cv.INTER_LINEAR);
+        currentBase.delete();
+        currentBase = ds;
+      }
+
+      const NUM_SCALES = SCALES_PER_OCTAVE + 3;
+      const gaussians = [];
+      const dogs = [];
+
+      // Гауссова пирамида для текущей октавы
+      for (let s = 0; s < NUM_SCALES; s++) {
+        const curSigma = SIGMA * Math.pow(K, s - 1);
+        const ksize = Math.max(3, (Math.ceil(curSigma * 6) | 1));
+        const blurred = new cv.Mat();
+        cv.GaussianBlur(currentBase, blurred,
+          new cv.Size(ksize, ksize), curSigma, 0, cv.BORDER_REPLICATE);
+        gaussians.push(blurred);
+      }
+
+      // DoG = G(s+1) - G(s)
+      for (let s = 0; s < NUM_SCALES - 1; s++) {
+        const dog = new cv.Mat();
+        cv.subtract(gaussians[s + 1], gaussians[s], dog);
+        dogs.push(dog);
+      }
+
+      // Поиск экстремумов в DoG-пирамиде (пропускаем первый и последний уровень)
+      for (let s = 1; s < dogs.length - 1; s++) {
+        const dog = dogs[s];
+        const prev = dogs[s - 1];
+        const next = dogs[s + 1];
+        const rows = dog.rows;
+        const cols = dog.cols;
+
+        for (let y = BORDER; y < rows - BORDER; y++) {
+          for (let x = BORDER; x < cols - BORDER; x++) {
+            const v = dog.floatAt(y, x);
+            const absV = Math.abs(v);
+            if (absV < CONTRAST_THRESHOLD) continue;
+
+            // Сравниваем с 26 соседями (9 в prev, 8 в текущем, 9 в next)
+            let isMax = true;
+            let isMin = true;
+            for (let dy = -1; dy <= 1 && (isMax || isMin); dy++) {
+              for (let dx = -1; dx <= 1 && (isMax || isMin); dx++) {
+                if (dx === 0 && dy === 0) continue;
+                const vp = prev.floatAt(y + dy, x + dx);
+                const vn = next.floatAt(y + dy, x + dx);
+                if (vp >= v || vn >= v) isMax = false;
+                if (vp <= v || vn <= v) isMin = false;
+              }
+            }
+
+            if (isMax || isMin) {
+              // Обратное преобразование координат
+              const scale = Math.pow(2, o);
+              const px = Math.round(x * scale);
+              const py = Math.round(y * scale);
+              if (px >= 0 && py >= 0 && px < grayU8.cols && py < grayU8.rows) {
+                points.push({ x: px, y: py, v: absV });
+              }
+            }
+          }
+        }
+      }
+
+      gaussians.forEach(m => m.delete());
+      dogs.forEach(m => m.delete());
+
+      // Прекращаем, если изображение стало слишком маленьким
+      if (currentBase.cols < 30 || currentBase.rows < 30) break;
+    }
+  } finally {
+    currentBase.delete();
+  }
+
+  // Сортируем по силе отклика — сильнейшие вперёд
+  points.sort((a, b) => b.v - a.v);
+
+  // Дедупликация: убираем точки ближе 4px друг к другу
+  const filtered = [];
+  const MIN_DIST2 = 16;
+  for (const p of points) {
+    let keep = true;
+    for (const q of filtered) {
+      const dx = p.x - q.x, dy = p.y - q.y;
+      if (dx * dx + dy * dy < MIN_DIST2) { keep = false; break; }
+    }
+    if (keep) filtered.push(p);
+    if (filtered.length >= 500) break;
+  }
+
+  return filtered.map(p => ({ x: p.x, y: p.y }));
+}
 
 export default function KeypointsPanel({ mats, canvasRef, showToast }) {
   const [type, setType] = useState(DEFAULTS.type);
@@ -16,23 +148,20 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
     const c = canvasRef && canvasRef.current;
     if (!m || !m.cur || !c) return;
 
-    // 1. Показать изображение
     showMat(m.cur, c);
 
-    // 2. Нарисовать точки поверх
     if (points.length === 0) return;
     const ctx = c.getContext('2d');
     for (const p of points) {
-      // Внешний кружок
       ctx.beginPath();
       ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255,40,40,1)';
+      ctx.strokeStyle = 'rgba(255, 40, 40, 1)';
       ctx.lineWidth = 2;
       ctx.stroke();
-      // Внутренняя точка
+
       ctx.beginPath();
       ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255,255,0,1)';
+      ctx.fillStyle = 'rgba(255, 255, 0, 1)';
       ctx.fill();
     }
   }, [points]); // eslint-disable-line react-hooks/exhaustive-deps
@@ -43,8 +172,10 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
 
     const g = toGray(m.cur);
     const detected = [];
+
     try {
       if (type === 'harris') {
+        // ========== HARRIS ==========
         const dst = new cv.Mat();
         cv.cornerHarris(g, dst, 2, 3, 0.04);
         const dil = new cv.Mat();
@@ -59,7 +190,9 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
           }
         }
         dst.delete(); dil.delete(); k.delete();
+
       } else if (type === 'fast') {
+        // ========== FAST (jsfeat) ==========
         if (typeof jsfeat === 'undefined') throw new Error('jsfeat не загружен');
         const width = g.cols, height = g.rows;
         const imgU8 = new jsfeat.matrix_t(width, height, jsfeat.U8C1_t);
@@ -69,7 +202,9 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
         for (let i = 0; i < 500; i++) corners[i] = new jsfeat.keypoint_t(0, 0, 0, 0, 0);
         const count = jsfeat.fast_corners.detect(imgU8, corners, 3);
         for (let i = 0; i < count; i++) detected.push({ x: corners[i].x, y: corners[i].y });
+
       } else if (type === 'orb') {
+        // ========== ORB ==========
         const orb = new cv.ORB(500);
         const kp = new cv.KeyPointVector();
         const mask = new cv.Mat();
@@ -79,9 +214,15 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
           detected.push({ x: Math.round(p.pt.x), y: Math.round(p.pt.y) });
         }
         kp.delete(); mask.delete(); orb.delete();
+
+      } else if (type === 'sift') {
+        // ========== SIFT (самописный) ==========
+        const result = detectSIFT(g, th);
+        for (const p of result) detected.push(p);
       }
+
     } catch (e) {
-      console.error(e);
+      console.error('Keypoints error:', e);
       g.delete();
       showToast('Ошибка: ' + e.message);
       return;
@@ -93,7 +234,6 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
       return;
     }
 
-    // Только setState — точка появится через useEffect
     setPoints(detected);
     showToast(`Найдено точек: ${detected.length}`);
   };
@@ -109,23 +249,33 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
 
   return (
     <details>
-      <summary>11. Ключевые точки</summary>
+      <summary>Ключевые точки</summary>
       <div className="body">
         <label>Детектор</label>
         <select value={type} onChange={(e) => setType(e.target.value)}>
-          <option value="harris">Харрис (Harris) — OpenCV</option>
-          <option value="fast">FAST — jsfeat</option>
-          <option value="orb">ORB — OpenCV</option>
+          <option value="harris">Харрис (Harris)</option>
+          <option value="orb">FAST</option>
+          <option value="sift">SIFT</option>
         </select>
+
         <label>Порог: {th}</label>
-        <input type="range" min="1" max="120" value={th}
-          onChange={(e) => setTh(+e.target.value)} />
-        <button style={{ marginTop: 8 }} onClick={run}>Найти ключевые точки</button>
+        <input
+          type="range" min="1" max="120" value={th}
+          onChange={(e) => setTh(+e.target.value)}
+        />
+
+        <button style={{ marginTop: 8 }} onClick={run}>
+          Найти ключевые точки
+        </button>
 
         <div className="btn-row">
           <button className={hasBase ? 'green' : 'sec'} onClick={handleReset}>
             {hasBase ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
           </button>
+        </div>
+
+        <div className="hint">
+          Harris/ORB — OpenCV.js. FAST — jsfeat. SIFT — самописный (DoG-пирамида).
         </div>
       </div>
     </details>
