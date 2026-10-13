@@ -83,7 +83,7 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
         <label>γ (гамма): {(gamma / 100).toFixed(2)}</label>
         <input type="range" min="10" max="500" value={gamma} onChange={(e) => setGamma(+e.target.value)} />
         <div className="btn-row">
-          <button onClick={doGamma}>Гамма</button>
+          <button className="sec" onClick={doGamma}>Гамма</button>
           <button className="sec" onClick={doLog}>Лог</button>
           <button className="sec" onClick={doExp}>Эксп</button>
         </div>

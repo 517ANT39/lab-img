@@ -303,25 +303,25 @@ export default function App() {
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasBase={hasBaseBW}
+                hasChanges={hasBaseBW}
               />
               <MorphologyPanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasBase={hasBaseMorph}
+                hasChanges={hasBaseMorph}
               />
               <FiltersPanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasBase={hasBaseFilters}
+                hasChanges={hasBaseFilters}
               />
               <EdgePanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasBase={hasBaseEdge}
+                hasChanges={hasBaseEdge}
               />
 
               {/* Панель 11 — независимая, со своим кэшем */}
@@ -329,7 +329,7 @@ export default function App() {
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
-                hasBase={hasBaseKeypoints}
+                hasChanges={hasBaseKeypoints}
                 showToast={showToast}
               />
             </aside>
