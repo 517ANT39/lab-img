@@ -114,7 +114,7 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
 
         <div className="btn-row">
           <button
-            className={hasChanges ? 'green' : 'sec'}
+            className={hasChanges ? 'red' : 'sec'}
             onClick={reset}
           >
             {hasChanges ? '↺ Отменить изменения' : '↺ Сбросить ползунки'}

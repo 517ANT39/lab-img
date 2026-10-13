@@ -85,7 +85,7 @@ export default function FiltersPanel({ applyOp, resetPanel, hasChanges }) {
         <button style={{ marginTop: 6 }} onClick={doMedian}>Медианная фильтрация</button>
 
         <div className="btn-row">
-          <button className={hasChanges ? 'green' : 'sec'} onClick={handleReset}>
+          <button className={hasChanges ? 'red' : 'sec'} onClick={handleReset}>
             {hasChanges ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
           </button>
         </div>

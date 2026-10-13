@@ -58,7 +58,7 @@ export default function EdgePanel({ applyOp, resetPanel, hasChanges }) {
         <button className="sec" style={{ marginTop: 10 }} onClick={doRoberts}>Оператор Робертса</button>
 
         <div className="btn-row">
-          <button className={hasChanges ? 'green' : 'sec'} onClick={handleReset}>
+          <button className={hasChanges ? 'red' : 'sec'} onClick={handleReset}>
             {hasChanges ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
           </button>
         </div>

@@ -269,7 +269,7 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
         </button>
 
         <div className="btn-row">
-          <button className={hasBase ? 'green' : 'sec'} onClick={handleReset}>
+          <button className={hasBase ? 'red' : 'sec'} onClick={handleReset}>
             {hasBase ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
           </button>
         </div>

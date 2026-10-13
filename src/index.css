@@ -9,7 +9,8 @@
   --fg: #e9edf5;
   --muted: #96a0b3;
   --acc: #4f9cf9;
-  --acc2: #22c55e;
+  --acc2: #c52222;
+  --acc3: #18c324;
   --danger: #ef4444;
 }
 
@@ -475,7 +476,8 @@ button:hover { filter: brightness(1.12); }
 button:active { transform: translateY(1px); }
 button:disabled { opacity: .45; cursor: not-allowed; filter: none; }
 button.sec { background: #333c4e; }
-button.green { background: var(--acc2); }
+button.red { background: var(--acc2); }
+button.green { background: var(--acc3); }
 button.danger { background: var(--danger); }
 
 .btn-row {
