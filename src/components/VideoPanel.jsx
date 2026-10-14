@@ -8,7 +8,6 @@ export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
   const [running, setRunning] = useState(false);
   const [loadedName, setLoadedName] = useState('');
 
-  // Refs — чтобы loop видел актуальные значения, а не замыкания
   const runningRef = useRef(false);
   const modeRef = useRef(mode);
   const blurRef = useRef(blur);
@@ -27,8 +26,7 @@ export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
     v.src = URL.createObjectURL(file);
     v.load();
     if (fgbgRef.current) { try { fgbgRef.current.delete(); } catch (_) {} }
-    // history=100 для быстрой адаптации, varThreshold=30 — чувствительность,
-    // detectShadows=false — тени не считаются объектами
+    // MOG2: history=100, varThreshold=30, detectShadows=false
     fgbgRef.current = new cv.BackgroundSubtractorMOG2(100, 30, false);
     setLoadedName(file.name);
     showToast('Видео загружено. Нажмите «Старт»');
@@ -44,7 +42,7 @@ export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
         return;
       }
 
-      // Ограничиваем размер кадра для производительности (макс 640 по большей стороне)
+      // Ограничиваем размер кадра для производительности
       const MAX_W = 640;
       const scale = v.videoWidth > MAX_W ? MAX_W / v.videoWidth : 1;
       const w = Math.round(v.videoWidth * scale);
@@ -66,9 +64,9 @@ export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
 
       // ---- MOG2 ----
       const fg = new cv.Mat();
-      fgbgRef.current.apply(rgb, fg, 0.01); // learningRate = 0.01 — медленная адаптация
+      fgbgRef.current.apply(rgb, fg, 0.01);
 
-      // Лёгкая морфология — убираем шум, но сохраняем силуэты
+      // Лёгкая морфология — убираем шум, сохраняем силуэты
       const k3 = cv.getStructuringElement(cv.MORPH_ELLIPSE, new cv.Size(3, 3));
       cv.morphologyEx(fg, fg, cv.MORPH_OPEN, k3);
       cv.morphologyEx(fg, fg, cv.MORPH_CLOSE, k3);
@@ -77,10 +75,17 @@ export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
       let out = new cv.Mat();
 
       if (modeRef.current === 'mask') {
-        // Режим 1: показываем маску движения — белые силуэты на чёрном
-        cv.cvtColor(fg, out, cv.COLOR_GRAY2RGB);
+        // ===== Режим 1: цветные объекты на чёрном фоне =====
+        // Маска — три канала, потом bitwise_and(rgb, mask3):
+        // где маска белая — пиксели оригинала,
+        // где чёрная — нули, т.е. чёрный фон.
+        const mask3 = new cv.Mat();
+        cv.cvtColor(fg, mask3, cv.COLOR_GRAY2RGB);
+        cv.bitwise_and(rgb, mask3, out);
+        mask3.delete();
+
       } else {
-        // Режим 2: размытие движущихся — движущиеся размыты, фон резкий
+        // ===== Режим 2: размытие движущихся =====
         const ksize = blurRef.current % 2 === 0 ? blurRef.current + 1 : blurRef.current;
         const blurred = new cv.Mat();
         cv.GaussianBlur(rgb, blurred, new cv.Size(ksize, ksize), 0, 0, cv.BORDER_DEFAULT);
@@ -99,7 +104,6 @@ export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
         a.delete(); b.delete();
       }
 
-      // Рисуем в canvas
       if (videoCanvasRef.current) {
         showMat(out, videoCanvasRef.current);
       }
@@ -136,7 +140,6 @@ export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
     if (v) v.pause();
   };
 
-  // Останавливаем при размонтировании
   useEffect(() => {
     return () => {
       runningRef.current = false;
@@ -169,7 +172,7 @@ export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
           <div className="pane-body">
             <label>Режим</label>
             <select value={mode} onChange={(e) => setMode(e.target.value)}>
-              <option value="mask">Вычитание фона (маска)</option>
+              <option value="mask">Вычитание фона (объекты на чёрном)</option>
               <option value="motionblur">Размытие движущихся</option>
             </select>
 
@@ -195,7 +198,7 @@ export default function VideoPanel({ showToast, videoElRef, videoCanvasRef }) {
           <div className="pane-title"><span>Справка</span></div>
           <div className="pane-body">
             <div className="hint">
-              <b>Вычитание фона</b> — белые силуэты движущихся объектов на чёрном фоне.<br />
+              <b>Вычитание фона</b> — цветные движущиеся объекты на чёрном фоне.<br />
               <b>Размытие движущихся</b> — движущиеся объекты размыты, фон резкий.<br /><br />
               Работает лучше на видео со <b>статичной камерой</b>.
               Первые 1–2 секунды алгоритм обучается — маска может быть неполной.
