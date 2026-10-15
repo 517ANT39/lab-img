@@ -112,7 +112,7 @@ export default function SimilarPanel({ showToast }) {
           🔎 Найти 2 самых похожих
         </button>
 
-        <button className="sec" onClick={clearAll} disabled={!images.length}>
+        <button className="red" onClick={clearAll} disabled={!images.length}>
           Очистить
         </button>
 
@@ -124,10 +124,6 @@ export default function SimilarPanel({ showToast }) {
           </div>
         )}
 
-        <div className="hint">
-          Сравнение — по 2D-гистограмме HSV, метрика — корреляция.
-          Лучшая пара подсвечивается зелёным.
-        </div>
       </div>
 
       <div className="sim-results">
