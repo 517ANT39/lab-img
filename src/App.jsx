@@ -286,9 +286,6 @@ export default function App() {
                   onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])} />
                 <div className="btn-row">
                   <button className="sec" onClick={handleReset}>↺ Сброс</button>
-                  <button className="sec" onClick={handleUndo}>
-                    ↶ Откат ({mats.current.history.length})
-                  </button>
                 </div>
                 <div className="hint">Клик по изображению — «пипетка».</div>
               </Section>
