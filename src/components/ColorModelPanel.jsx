@@ -245,11 +245,11 @@ export default function ColorModelPanel({ profile, pixel, onPixelChange }) {
         );
       })}
 
-      <div className="hint">
+      {/* <div className="hint">
         Слайдер — мгновенно, поле ввода — по <b>Enter</b> или при потере фокуса.{' '}
         <b>Esc</b> отменяет набор. LAB и YCbCr пересчитаны для профиля{' '}
         <b>{COLOR_PROFILES[profile].name}</b>.
-      </div>
+      </div> */}
     </>
   );
 }

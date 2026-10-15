@@ -297,8 +297,8 @@ export default function App() {
                 <ImageInfo meta={meta} curRGB={mats.current.cur} />
               </Section>
 
-              <Section title="Цветовые модели и профиль" defaultOpen>
-                <ColorProfileSelector profile={profile} onChange={setProfile} />
+              <Section title="Цветовые модели" defaultOpen>
+                {/* <ColorProfileSelector profile={profile} onChange={setProfile} /> */}
                 <div style={{ height: 12 }} />
                 <ColorModelPanel profile={profile} pixel={pixel} onPixelChange={setPixel} />
               </Section>
