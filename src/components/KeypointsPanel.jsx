@@ -274,9 +274,7 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
           </button>
         </div>
 
-        <div className="hint">
-          Harris/ORB — OpenCV.js. FAST — jsfeat. SIFT — самописный (DoG-пирамида).
-        </div>
+        
       </div>
     </details>
   );
