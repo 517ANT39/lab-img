@@ -27,7 +27,6 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
     return true;
   };
 
-  // Применяет яркость/контраст/насыщенность к базе с явными значениями
   const buildAdjusted = (base, b, c, s) => {
     const m = new cv.Mat();
     base.convertTo(m, -1, c, b);
@@ -48,17 +47,24 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
     return m;
   };
 
-  // Вызывается при движении любого ползунка
   const onInput = (newBri, newCon, newSat) => {
     const m = mats.current;
     if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
 
-    // Если меняется насыщенность и изображение серое — предупредить и не применять
     const satChanged = Math.abs(newSat - sat) > 0.001;
-    if (satChanged && isGrayscale(m.cur)) {
-      showToast('Изображение в градациях серого — насыщенность не влияет', 2500);
-      setSat(100);
-      return;
+    const goingToZero = newSat === 0;
+
+    // Проверяем только:
+    //   1. изменилась именно насыщенность,
+    //   2. значение не равно нулю (установка S=0 разрешена всегда),
+    //   3. изображение, от которого считаются правки, уже серое.
+    if (satChanged && !goingToZero) {
+      // Если база уже создана — проверяем её. Иначе — текущее изображение.
+      const checkMat = m.base || m.cur;
+      if (isGrayscale(checkMat)) {
+        showToast('Изображение в градациях серого — насыщенность не влияет', 2500);
+        return;
+      }
     }
 
     // Запоминаем базу при первой правке
@@ -80,7 +86,6 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
     refreshDisplay();
   };
 
-  // Кнопка: если правки были — полный откат изображения; иначе — просто UI
   const reset = () => {
     const m = mats.current;
 
@@ -89,7 +94,6 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
     setSat(100);
 
     if (m.base && m.cur) {
-      // Возвращаем изображение к состоянию до первой правки слайдера
       const res = m.base.clone();
       m.cur.delete();
       m.cur = res;
