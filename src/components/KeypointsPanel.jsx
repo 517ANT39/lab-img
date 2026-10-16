@@ -7,26 +7,20 @@ const DEFAULTS = { type: 'harris', th: 25 };
 
 /**
  * Самописная реализация детектора SIFT.
- * Построение гауссовой пирамиды + DoG (разность гауссов) → поиск экстремумов
- * по 26 соседям (x, y, scale) → фильтр по контрасту → дедупликация.
- *
- * Это детектор ключевых точек (без дескрипторов и ориентации) —
- * именно то, что требуется в задании «выделение ключевых точек».
+ * Возвращает массив { x, y, size, angle }:
+ *   size  — радиус круга (пропорционален σ точки)
+ *   angle — доминирующая ориентация градиента (радианы)
  */
 function detectSIFT(grayU8, threshold) {
-  const points = [];
+  const rawPoints = [];
 
-  // Параметры SIFT
-  const NUM_OCTAVES = 3;         // количество октав
-  const SCALES_PER_OCTAVE = 3;   // s (масштабов на октаву)
-  const SIGMA = 1.6;             // начальная сигма
+  const NUM_OCTAVES = 3;
+  const SCALES_PER_OCTAVE = 3;
+  const SIGMA = 1.6;
   const K = Math.pow(2, 1 / SCALES_PER_OCTAVE);
-  const BORDER = 8;              // игнорируем края
-  // Порог контраста — от значения слайдера (0..120)
-  // Меньше порог → больше точек
+  const BORDER = 8;
   const CONTRAST_THRESHOLD = Math.max(0.5, threshold * 0.15);
 
-  // Работаем в CV_32F (иначе DoG даст отрицательные значения неправильно)
   const baseFloat = new cv.Mat();
   grayU8.convertTo(baseFloat, cv.CV_32F);
 
@@ -34,7 +28,6 @@ function detectSIFT(grayU8, threshold) {
 
   try {
     for (let o = 0; o < NUM_OCTAVES; o++) {
-      // Для не-первой октавы — уменьшаем изображение вдвое
       if (o > 0) {
         const ds = new cv.Mat();
         cv.resize(currentBase, ds,
@@ -51,7 +44,6 @@ function detectSIFT(grayU8, threshold) {
       const gaussians = [];
       const dogs = [];
 
-      // Гауссова пирамида для текущей октавы
       for (let s = 0; s < NUM_SCALES; s++) {
         const curSigma = SIGMA * Math.pow(K, s - 1);
         const ksize = Math.max(3, (Math.ceil(curSigma * 6) | 1));
@@ -61,14 +53,14 @@ function detectSIFT(grayU8, threshold) {
         gaussians.push(blurred);
       }
 
-      // DoG = G(s+1) - G(s)
       for (let s = 0; s < NUM_SCALES - 1; s++) {
         const dog = new cv.Mat();
         cv.subtract(gaussians[s + 1], gaussians[s], dog);
         dogs.push(dog);
       }
 
-      // Поиск экстремумов в DoG-пирамиде (пропускаем первый и последний уровень)
+      const octaveScale = Math.pow(2, o);
+
       for (let s = 1; s < dogs.length - 1; s++) {
         const dog = dogs[s];
         const prev = dogs[s - 1];
@@ -76,13 +68,15 @@ function detectSIFT(grayU8, threshold) {
         const rows = dog.rows;
         const cols = dog.cols;
 
+        // Реальная сигма этого уровня — нужна для радиуса круга
+        const sigmaAtLevel = SIGMA * Math.pow(K, s) * octaveScale;
+
         for (let y = BORDER; y < rows - BORDER; y++) {
           for (let x = BORDER; x < cols - BORDER; x++) {
             const v = dog.floatAt(y, x);
             const absV = Math.abs(v);
             if (absV < CONTRAST_THRESHOLD) continue;
 
-            // Сравниваем с 26 соседями (9 в prev, 8 в текущем, 9 в next)
             let isMax = true;
             let isMin = true;
             for (let dy = -1; dy <= 1 && (isMax || isMin); dy++) {
@@ -96,12 +90,26 @@ function detectSIFT(grayU8, threshold) {
             }
 
             if (isMax || isMin) {
-              // Обратное преобразование координат
-              const scale = Math.pow(2, o);
-              const px = Math.round(x * scale);
-              const py = Math.round(y * scale);
+              // Ориентация — по оператору Собеля 3×3 в точке
+              const gx =
+                dog.floatAt(y - 1, x + 1) + 2 * dog.floatAt(y, x + 1) + dog.floatAt(y + 1, x + 1) -
+                dog.floatAt(y - 1, x - 1) - 2 * dog.floatAt(y, x - 1) - dog.floatAt(y + 1, x - 1);
+              const gy =
+                dog.floatAt(y + 1, x - 1) + 2 * dog.floatAt(y + 1, x) + dog.floatAt(y + 1, x + 1) -
+                dog.floatAt(y - 1, x - 1) - 2 * dog.floatAt(y - 1, x) - dog.floatAt(y - 1, x + 1);
+              const angle = Math.atan2(gy, gx);
+
+              const px = Math.round(x * octaveScale);
+              const py = Math.round(y * octaveScale);
+
               if (px >= 0 && py >= 0 && px < grayU8.cols && py < grayU8.rows) {
-                points.push({ x: px, y: py, v: absV });
+                rawPoints.push({
+                  x: px,
+                  y: py,
+                  size: Math.max(4, sigmaAtLevel * 3),
+                  angle,
+                  v: absV
+                });
               }
             }
           }
@@ -111,30 +119,29 @@ function detectSIFT(grayU8, threshold) {
       gaussians.forEach(m => m.delete());
       dogs.forEach(m => m.delete());
 
-      // Прекращаем, если изображение стало слишком маленьким
       if (currentBase.cols < 30 || currentBase.rows < 30) break;
     }
   } finally {
     currentBase.delete();
   }
 
-  // Сортируем по силе отклика — сильнейшие вперёд
-  points.sort((a, b) => b.v - a.v);
+  rawPoints.sort((a, b) => b.v - a.v);
 
-  // Дедупликация: убираем точки ближе 4px друг к другу
+  // Дедупликация с учётом размера круга — не накладываем круги друг на друга
   const filtered = [];
-  const MIN_DIST2 = 16;
-  for (const p of points) {
+  for (const p of rawPoints) {
     let keep = true;
+    const minDist = Math.max(4, p.size * 0.5);
+    const minDist2 = minDist * minDist;
     for (const q of filtered) {
       const dx = p.x - q.x, dy = p.y - q.y;
-      if (dx * dx + dy * dy < MIN_DIST2) { keep = false; break; }
+      if (dx * dx + dy * dy < minDist2) { keep = false; break; }
     }
     if (keep) filtered.push(p);
-    if (filtered.length >= 500) break;
+    if (filtered.length >= 300) break;
   }
 
-  return filtered.map(p => ({ x: p.x, y: p.y }));
+  return filtered.map(p => ({ x: p.x, y: p.y, size: p.size, angle: p.angle }));
 }
 
 export default function KeypointsPanel({ mats, canvasRef, showToast }) {
@@ -152,17 +159,61 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
 
     if (points.length === 0) return;
     const ctx = c.getContext('2d');
+
     for (const p of points) {
+      // Если у точки есть size и angle — рисуем SIFT-стиль: круг + вектор
+      const isSift = typeof p.size === 'number' && typeof p.angle === 'number';
+      const size = isSift ? p.size : 6;
+
+      // Внешний круг — масштаб точки
       ctx.beginPath();
-      ctx.arc(p.x, p.y, 4, 0, Math.PI * 2);
-      ctx.strokeStyle = 'rgba(255, 40, 40, 1)';
-      ctx.lineWidth = 2;
+      ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
+      ctx.strokeStyle = 'rgba(255, 60, 60, 0.9)';
+      ctx.lineWidth = 1.5;
       ctx.stroke();
 
-      ctx.beginPath();
-      ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
-      ctx.fillStyle = 'rgba(255, 255, 0, 1)';
-      ctx.fill();
+      if (isSift) {
+        // Внутренний круг — ядро
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, Math.max(1.5, size * 0.3), 0, Math.PI * 2);
+        ctx.strokeStyle = 'rgba(255, 200, 0, 0.9)';
+        ctx.lineWidth = 1;
+        ctx.stroke();
+
+        // Вектор ориентации с наконечником
+        const len = size;
+        const ex = p.x + Math.cos(p.angle) * len;
+        const ey = p.y + Math.sin(p.angle) * len;
+
+        ctx.beginPath();
+        ctx.moveTo(p.x, p.y);
+        ctx.lineTo(ex, ey);
+        ctx.strokeStyle = 'rgba(0, 255, 100, 1)';
+        ctx.lineWidth = 2;
+        ctx.stroke();
+
+        // Наконечник стрелки
+        const headLen = Math.max(3, size * 0.25);
+        const headAngle = Math.PI / 6;
+        ctx.beginPath();
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(
+          ex - headLen * Math.cos(p.angle - headAngle),
+          ey - headLen * Math.sin(p.angle - headAngle)
+        );
+        ctx.moveTo(ex, ey);
+        ctx.lineTo(
+          ex - headLen * Math.cos(p.angle + headAngle),
+          ey - headLen * Math.sin(p.angle + headAngle)
+        );
+        ctx.stroke();
+      } else {
+        // Harris / FAST — маленькая точка в центре, как было раньше
+        ctx.beginPath();
+        ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
+        ctx.fillStyle = 'rgba(255, 255, 0, 1)';
+        ctx.fill();
+      }
     }
   }, [points]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -235,7 +286,7 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
     }
 
     setPoints(detected);
-    showToast(`Найдено точек: ${detected.length}`);
+    // showToast(`Найдено точек: ${detected.length}`);
   };
 
   const handleReset = () => {
@@ -273,8 +324,6 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
             {hasBase ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
           </button>
         </div>
-
-        
       </div>
     </details>
   );
