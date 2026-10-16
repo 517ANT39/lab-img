@@ -7,6 +7,26 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
   const [sat, setSat] = useState(100);
   const [hasChanges, setHasChanges] = useState(false);
 
+  // Проверяем, серое ли изображение — сэмплируем ~1000 пикселей
+  const isGrayscale = (mat) => {
+    if (!mat) return false;
+    const w = mat.cols, h = mat.rows;
+    const total = w * h;
+    const step = Math.max(1, Math.floor(total / 1000));
+    let checked = 0;
+    for (let p = 0; p < total; p += step) {
+      const y = Math.floor(p / w);
+      const x = p % w;
+      const px = mat.ucharPtr(y, x);
+      if (Math.abs(px[0] - px[1]) > 2 || Math.abs(px[1] - px[2]) > 2) {
+        return false;
+      }
+      checked++;
+      if (checked >= 1000) break;
+    }
+    return true;
+  };
+
   // Применяет яркость/контраст/насыщенность к базе с явными значениями
   const buildAdjusted = (base, b, c, s) => {
     const m = new cv.Mat();
@@ -32,6 +52,14 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
   const onInput = (newBri, newCon, newSat) => {
     const m = mats.current;
     if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
+
+    // Если меняется насыщенность и изображение серое — предупредить и не применять
+    const satChanged = Math.abs(newSat - sat) > 0.001;
+    if (satChanged && isGrayscale(m.cur)) {
+      showToast('Изображение в градациях серого — насыщенность не влияет', 2500);
+      setSat(100);
+      return;
+    }
 
     // Запоминаем базу при первой правке
     if (!m.base) {
