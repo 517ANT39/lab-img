@@ -54,12 +54,7 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
     const satChanged = Math.abs(newSat - sat) > 0.001;
     const goingToZero = newSat === 0;
 
-    // Проверяем только:
-    //   1. изменилась именно насыщенность,
-    //   2. значение не равно нулю (установка S=0 разрешена всегда),
-    //   3. изображение, от которого считаются правки, уже серое.
     if (satChanged && !goingToZero) {
-      // Если база уже создана — проверяем её. Иначе — текущее изображение.
       const checkMat = m.base || m.cur;
       if (isGrayscale(checkMat)) {
         showToast('Изображение в градациях серого — насыщенность не влияет', 2500);
@@ -86,6 +81,34 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
     refreshDisplay();
   };
 
+  // Применить: текущее состояние фиксируется как новая база.
+  // Дальнейшие правки считаются уже от него.
+  const apply = () => {
+    const m = mats.current;
+    if (!m.base || !m.cur) {
+      showToast('Нет изменений для применения');
+      return;
+    }
+
+    // Текущее становится новой базой
+    m.base.delete();
+    m.base = m.cur.clone();
+
+    // Ползунки в нейтраль, но изображение остаётся изменённым
+    setBri(0);
+    setCon(100);
+    setSat(100);
+    setHasChanges(false);
+
+    // before для гистограммы — тоже обновляем
+    if (m.before) m.before.delete();
+    m.before = m.cur.clone();
+
+    refreshDisplay();
+    showToast('Изменения применены');
+  };
+
+  // Отмена: изображение возвращается к базе
   const reset = () => {
     const m = mats.current;
 
@@ -146,17 +169,24 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
 
         <div className="btn-row">
           <button
+            className={hasChanges ? 'green' : 'sec'}
+            onClick={apply}
+            disabled={!hasChanges}
+          >
+            ✓ Применить
+          </button>
+          <button
             className={hasChanges ? 'red' : 'sec'}
             onClick={reset}
           >
-            {hasChanges ? '↺ Отменить изменения' : '↺ Сбросить ползунки'}
+            {hasChanges ? '↺ Отменить' : '↺ Сбросить ползунки'}
           </button>
         </div>
 
         <div className="hint">
           {hasChanges
-            ? <>Есть неотменённые правки. Кнопка вернёт изображение к состоянию <b>до</b> первой правки.</>
-            : <>Слайдеры изменяют изображение сразу. Кнопка откатит их, если правки были сделаны.</>}
+            ? <>Есть неотменённые правки. <b>Применить</b> — зафиксировать текущее состояние как новое. <b>Отменить</b> — вернуть к состоянию до правок.</>
+            : <>Слайдеры изменяют изображение сразу. После правки появятся кнопки <b>Применить</b> и <b>Отменить</b>.</>}
         </div>
       </div>
     </details>
