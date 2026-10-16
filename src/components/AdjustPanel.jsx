@@ -1,13 +1,34 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import cv from '../cv/cvInstance.js';
 
-export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
-  const [bri, setBri] = useState(0);
-  const [con, setCon] = useState(100);
-  const [sat, setSat] = useState(100);
-  const [hasChanges, setHasChanges] = useState(false);
+const DEFAULTS = { bri: 0, con: 100, sat: 100 };
 
-  // Проверяем, серое ли изображение — сэмплируем ~1000 пикселей
+export default function AdjustPanel({ mats, refreshDisplay, showToast, tick }) {
+  const [bri, setBri] = useState(DEFAULTS.bri);
+  const [con, setCon] = useState(DEFAULTS.con);
+  const [sat, setSat] = useState(DEFAULTS.sat);
+  const [hasChanges, setHasChanges] = useState(false);
+  const [hasApplied, setHasApplied] = useState(false);
+
+  const appliedRef = useRef({ bri: DEFAULTS.bri, con: DEFAULTS.con, sat: DEFAULTS.sat });
+
+  // Синхронизация с внешним сбросом.
+  // Срабатывает при tick — то есть после любого refreshDisplay.
+  // Если у панели ЕСТЬ база (m.base) — не трогаем ползунки.
+  // Если базы нет — значит App сделал сброс/откат/загрузил новый файл.
+  useEffect(() => {
+    const m = mats.current;
+    if (m && m.base) return;
+
+    // Базы нет — обнуляем всё
+    setBri(DEFAULTS.bri);
+    setCon(DEFAULTS.con);
+    setSat(DEFAULTS.sat);
+    setHasChanges(false);
+    setHasApplied(false);
+    appliedRef.current = { bri: DEFAULTS.bri, con: DEFAULTS.con, sat: DEFAULTS.sat };
+  }, [tick]); // eslint-disable-line react-hooks/exhaustive-deps
+
   const isGrayscale = (mat) => {
     if (!mat) return false;
     const w = mat.cols, h = mat.rows;
@@ -47,89 +68,88 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
     return m;
   };
 
-  const onInput = (newBri, newCon, newSat) => {
-    const m = mats.current;
-    if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
-
-    const satChanged = Math.abs(newSat - sat) > 0.001;
-    const goingToZero = newSat === 0;
-
-    if (satChanged && !goingToZero) {
-      const checkMat = m.base || m.cur;
-      if (isGrayscale(checkMat)) {
-        showToast('Изображение в градациях серого — насыщенность не влияет', 2500);
-        return;
-      }
-    }
-
-    // Запоминаем базу при первой правке
-    if (!m.base) {
-      m.base = m.cur.clone();
-      if (m.before) m.before.delete();
-      m.before = m.cur.clone();
-    }
-
-    const b = newBri;
-    const c = newCon / 100;
-    const s = newSat / 100;
-
-    const res = buildAdjusted(m.base, b, c, s);
-    m.cur.delete();
-    m.cur = res;
-
-    setHasChanges(true);
-    refreshDisplay();
+  const updateHasChanges = (newBri, newCon, newSat) => {
+    const a = appliedRef.current;
+    setHasChanges(newBri !== a.bri || newCon !== a.con || newSat !== a.sat);
   };
 
-  // Применить: текущее состояние фиксируется как новая база.
-  // Дальнейшие правки считаются уже от него.
+  const onChangeBri = (v) => { setBri(v); updateHasChanges(v, con, sat); };
+  const onChangeCon = (v) => { setCon(v); updateHasChanges(bri, v, sat); };
+  const onChangeSat = (v) => { setSat(v); updateHasChanges(bri, con, v); };
+
+  // ПРИМЕНИТЬ
   const apply = () => {
     const m = mats.current;
-    if (!m.base || !m.cur) {
-      showToast('Нет изменений для применения');
-      return;
+    if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
+    if (!hasChanges) { showToast('Значения не изменились'); return; }
+
+    // База — сохраняется один раз, до первого применения
+    if (!m.base) {
+      m.base = m.cur.clone();
     }
 
-    // Текущее становится новой базой
-    m.base.delete();
-    m.base = m.cur.clone();
+    const b = bri;
+    const c = con / 100;
+    const s = sat / 100;
 
-    // Ползунки в нейтраль, но изображение остаётся изменённым
-    setBri(0);
-    setCon(100);
-    setSat(100);
-    setHasChanges(false);
+    const satDiffers = Math.abs(s - 1) > 0.001;
+    const satBlocked = satDiffers && isGrayscale(m.base);
+    if (satBlocked) {
+      showToast('Изображение серое — насыщенность пропущена', 2500);
+    }
+    const effectiveSat = satBlocked ? 1 : s;
 
-    // before для гистограммы — тоже обновляем
+    // Снимок для истории и гистограммы
     if (m.before) m.before.delete();
     m.before = m.cur.clone();
+    m.history.push(m.cur.clone());
+    if (m.history.length > 20) {
+      const old = m.history.shift();
+      try { old.delete(); } catch (_) {}
+    }
 
+    // Пересчитываем от базы с текущими значениями ползунков
+    const res = buildAdjusted(m.base, b, c, effectiveSat);
+    const oldCur = m.cur;
+    m.cur = res;
+    try { oldCur.delete(); } catch (_) {}
+
+    // Запоминаем, что именно применили — флаг hasChanges будет
+    // сравнивать ползунки с этим состоянием
+    appliedRef.current = { bri, con, sat };
+    setHasChanges(false);
+    setHasApplied(true);
+
+    // refreshDisplay меняет tick — но useEffect выше увидит,
+    // что m.base существует, и НЕ тронет ползунки.
     refreshDisplay();
     showToast('Изменения применены');
   };
 
-  // Отмена: изображение возвращается к базе
+  // СБРОС — вернуть к базе, ползунки в нейтраль
   const reset = () => {
     const m = mats.current;
 
-    setBri(0);
-    setCon(100);
-    setSat(100);
+    // Сначала сбрасываем m.base — тогда useEffect на следующий tick
+    // увидит, что базы нет, но мы и так уже всё сбрасываем сами.
+    // А чтобы ползунки не мигнули — устанавливаем их синхронно.
+    setBri(DEFAULTS.bri);
+    setCon(DEFAULTS.con);
+    setSat(DEFAULTS.sat);
+    setHasChanges(false);
+    setHasApplied(false);
+    appliedRef.current = { bri: DEFAULTS.bri, con: DEFAULTS.con, sat: DEFAULTS.sat };
 
     if (m.base && m.cur) {
       const res = m.base.clone();
-      m.cur.delete();
+      const oldCur = m.cur;
       m.cur = res;
-      m.base.delete();
+      try { oldCur.delete(); } catch (_) {}
+      try { m.base.delete(); } catch (_) {}
       m.base = null;
       if (m.before) { m.before.delete(); m.before = null; }
-
       refreshDisplay();
-      setHasChanges(false);
-      showToast('Изменения яркости/контраста/насыщенности отменены');
-    } else {
-      setHasChanges(false);
-      showToast('Ползунки сброшены');
+      showToast('Сброшено к исходному');
     }
   };
 
@@ -140,53 +160,44 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast }) {
         <label>Яркость: {bri}</label>
         <input
           type="range" min="-120" max="120" value={bri}
-          onChange={(e) => {
-            const v = +e.target.value;
-            setBri(v);
-            onInput(v, con, sat);
-          }}
+          onChange={(e) => onChangeBri(+e.target.value)}
         />
 
         <label>Контраст: {(con / 100).toFixed(2)}</label>
         <input
           type="range" min="10" max="300" value={con}
-          onChange={(e) => {
-            const v = +e.target.value;
-            setCon(v);
-            onInput(bri, v, sat);
-          }}
+          onChange={(e) => onChangeCon(+e.target.value)}
         />
 
         <label>Насыщенность: {(sat / 100).toFixed(2)}</label>
         <input
           type="range" min="0" max="300" value={sat}
-          onChange={(e) => {
-            const v = +e.target.value;
-            setSat(v);
-            onInput(bri, con, v);
-          }}
+          onChange={(e) => onChangeSat(+e.target.value)}
         />
 
-        <div className="btn-row">
-          <button
-            className={hasChanges ? 'green' : 'sec'}
-            onClick={apply}
-            disabled={!hasChanges}
-          >
-            ✓ Применить
-          </button>
-          <button
-            className={hasChanges ? 'red' : 'sec'}
-            onClick={reset}
-          >
-            {hasChanges ? '↺ Отменить' : '↺ Сбросить ползунки'}
-          </button>
-        </div>
+        {/* Кнопки друг под другом с отступом */}
+        <button
+          style={{
+            marginTop: 12,
+            background: '#333c4e'
+          }}
+          onClick={apply}
+        >
+          ✓ Применить
+        </button>
+        <button
+          style={{
+            marginTop: 8,
+            background: hasApplied ? 'var(--danger)' : '#333c4e'
+          }}
+          onClick={reset}
+        >
+          ↺ Сброс
+        </button>
 
-        <div className="hint">
-          {hasChanges
-            ? <>Есть неотменённые правки. <b>Применить</b> — зафиксировать текущее состояние как новое. <b>Отменить</b> — вернуть к состоянию до правок.</>
-            : <>Слайдеры изменяют изображение сразу. После правки появятся кнопки <b>Применить</b> и <b>Отменить</b>.</>}
+        <div className="hint" style={{ marginTop: 10 }}>
+          Ползунки остаются на своих значениях после применения.
+          <b> Применить</b> пересчитывает изображение, <b>Сброс</b> — возвращает к исходному.
         </div>
       </div>
     </details>

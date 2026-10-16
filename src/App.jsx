@@ -311,8 +311,8 @@ export default function App() {
                 refreshDisplay={refreshDisplay}
                 resetPanel={resetPanel}
                 showToast={showToast}
+                tick={tick}
               />
-
               <BWCorrectionPanel
                 mats={mats}
                 applyOp={applyOp}
