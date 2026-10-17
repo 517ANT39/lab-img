@@ -34,13 +34,18 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('image');
   const [zoom, setZoom] = useState(1);
   
+  // Ключ для принудительного сброса внутреннего состояния AdjustPanel
+  const [adjustKey, setAdjustKey] = useState(0);
+
   const [histHeight, setHistHeight] = useState(150);
   const isDragging = useRef(false);
   const startY = useRef(0);
   const startHeight = useRef(0);
 
   const mats = useRef({
-    orig: null, cur: null, before: null, base: null, kpBase: null, history: [], panelBases: {}
+    orig: null, cur: null, before: null, base: null, kpBase: null,
+    isGrayFilter: false, // Флаг: были ли применены градации серого
+    history: [], panelBases: {}
   });
 
   const cvResultRef = useRef(null);
@@ -158,6 +163,8 @@ export default function App() {
         if (m.before) m.before.delete();
         if (m.base) m.base.delete();
         clearAllBases();
+        
+        m.isGrayFilter = false;
 
         m.orig = rgb;
         m.cur = rgb.clone();
@@ -171,6 +178,7 @@ export default function App() {
         });
 
         setZoom(1);
+        setAdjustKey(k => k + 1); // Сбрасываем AdjustPanel
         refreshDisplay();
         showToast('Изображение загружено');
         URL.revokeObjectURL(url);
@@ -190,10 +198,14 @@ export default function App() {
     if (m.before) m.before.delete();
     if (m.base) m.base.delete();
     clearAllBases();
+    
+    m.isGrayFilter = false;
+
     m.cur = m.orig.clone();
     m.before = null;
     m.base = null;
     setZoom(1);
+    setAdjustKey(k => k + 1); // Сбрасываем AdjustPanel
     refreshDisplay();
     showToast('Сброшено к исходному');
   }, [refreshDisplay, showToast, clearAllBases]);
@@ -207,6 +219,10 @@ export default function App() {
     m.cur = prev;
     if (m.base) { m.base.delete(); m.base = null; }
     clearAllBases();
+    
+    m.isGrayFilter = false;
+
+    setAdjustKey(k => k + 1); // Сбрасываем AdjustPanel
     refreshDisplay();
     showToast('Откат выполнен');
   }, [refreshDisplay, showToast, clearAllBases]);
@@ -226,12 +242,12 @@ export default function App() {
 
     if (panelKey) {
       clearOtherBases(panelKey);
-      if (!m.panelBases[panelKey]) {
-        m.panelBases[panelKey] = m.cur.clone();
-      }
+      if (!m.panelBases[panelKey]) m.panelBases[panelKey] = m.cur.clone();
     } else {
       clearOtherBases(null);
     }
+
+    if (panelKey === 'gray') m.isGrayFilter = true;
 
     m.history.push(m.cur.clone());
     if (m.history.length > 20) { const old = m.history.shift(); try { old.delete(); } catch (_) { } }
@@ -260,6 +276,9 @@ export default function App() {
       try { oldCur.delete(); } catch (_) { }
       try { base.delete(); } catch (_) { }
       delete m.panelBases[panelKey];
+      
+      if (panelKey === 'gray') m.isGrayFilter = false;
+
       if (m.before) { m.before.delete(); m.before = null; }
       if (m.base) { m.base.delete(); m.base = null; }
       refreshDisplay();
@@ -323,7 +342,6 @@ export default function App() {
                 <ColorModelPanel profile={profile} pixel={pixel} onPixelChange={setPixel} />
               </Section>
 
-              {/* ОБНОВЛЕННЫЙ БЛОК ГРАДАЦИЙ СЕРОГО С КНОПКОЙ СБРОСА */}
               <Section title="Градации серого">
                 <div className="btn-row" style={{ marginTop: 0 }}>
                   <button onClick={() => applyOp((src) => grayToRGB(toGray(src)), 'Полутоновое', 'gray')}>
@@ -339,12 +357,13 @@ export default function App() {
               </Section>
 
               <AdjustPanel
+                key={adjustKey}
                 mats={mats}
-                refreshDisplay={refreshDisplay}
+                applyOp={applyOp}
                 resetPanel={resetPanel}
                 showToast={showToast}
-                tick={tick}
               />
+              
               <BWCorrectionPanel
                 mats={mats}
                 applyOp={applyOp}
@@ -449,7 +468,7 @@ export default function App() {
           <div className="page-content single-page">
             <div className="pane">
               <div className="pane-title"><span>Поиск похожих изображений</span></div>
-              <div className="pane-body" style={{ maxHeight: 'none' }}>
+              <div className="pane-body">
                 <SimilarPanel showToast={showToast} />
               </div>
             </div>
@@ -460,7 +479,7 @@ export default function App() {
           <div className="page-content single-page">
             <div className="pane">
               <div className="pane-title"><span>Обработка видео</span></div>
-              <div className="pane-body" style={{ maxHeight: 'none' }}>
+              <div className="pane-body">
                 <VideoPanel
                   showToast={showToast}
                   videoElRef={videoElRef}
