@@ -25,19 +25,31 @@ function fmtCount(n) {
 export function drawHistogram(canvas, mat, channels) {
   if (!canvas) return;
 
-  const PAD_L = 56;   // отступ слева под ось Y
-  const PAD_R = 12;
-  const PAD_T = 12;
-  const PAD_B = 28;   // отступ снизу под ось X
-  const W = 620;
-  const H = 240;
+  // Получаем реальные размеры контейнера (высота задается в CSS)
+  const rect = canvas.getBoundingClientRect();
+  if (rect.width === 0 || rect.height === 0) return; // Если скрыт
 
-  canvas.width = W;
-  canvas.height = H;
+  const dpr = window.devicePixelRatio || 1;
+  const W = rect.width;
+  const H = rect.height;
+
+  // Устанавливаем физические размеры canvas для идеальной четкости (Retina)
+  if (canvas.width !== W * dpr || canvas.height !== H * dpr) {
+    canvas.width = W * dpr;
+    canvas.height = H * dpr;
+  }
+
   const ctx = canvas.getContext('2d');
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); // Масштабируем контекст под CSS-пиксели
 
   ctx.fillStyle = '#0f1116';
   ctx.fillRect(0, 0, W, H);
+
+  // Отступы для осей
+  const PAD_L = 45; 
+  const PAD_R = 15;
+  const PAD_T = 15;
+  const PAD_B = 25; 
 
   const plotX = PAD_L;
   const plotY = PAD_T;
@@ -46,7 +58,7 @@ export function drawHistogram(canvas, mat, channels) {
 
   if (!mat) {
     ctx.fillStyle = '#3b4354';
-    ctx.font = '13px Segoe UI';
+    ctx.font = '12px Segoe UI';
     ctx.textAlign = 'center';
     ctx.fillText('нет данных', W / 2, H / 2);
     ctx.textAlign = 'left';
@@ -75,9 +87,7 @@ export function drawHistogram(canvas, mat, channels) {
       vec.push_back(m);
       const hist = new cv.Mat();
       const mask = new cv.Mat();
-      // Тип CV_32S — точные целые счётчики, а не float
       cv.calcHist(vec, [0], mask, hist, [256], [0, 256], false);
-      // hist.data32F содержит значения, но нам важна точность
       hists.push(Array.from(hist.data32F));
       vec.delete(); hist.delete(); mask.delete();
     }
@@ -87,17 +97,16 @@ export function drawHistogram(canvas, mat, channels) {
     return;
   }
 
-  // Если изображение было уменьшено — пересчитываем счётчики в реальные пиксели
+  // Пересчет в реальные пиксели (если изображение было уменьшено)
   const scaleFactor = (() => {
     const scale = Math.max(mat.cols, mat.rows) > 480
       ? 480 / Math.max(mat.cols, mat.rows) : 1;
     return scale < 1 ? 1 / (scale * scale) : 1;
   })();
 
-  // Реальные счётчики пикселей
   const realHists = hists.map(h => h.map(v => Math.round(v * scaleFactor)));
 
-  // Максимум по всем видимым каналам
+  // Максимум по видимым каналам
   const show = [channels.r, channels.g, channels.b];
   let maxVal = 0;
   for (let c = 0; c < 3; c++) {
@@ -110,7 +119,7 @@ export function drawHistogram(canvas, mat, channels) {
   const niceYMax = niceMax(maxVal);
 
   // ---- Ось Y: подписи и сетка ----
-  const Y_TICKS = 5;
+  const Y_TICKS = 4;
   ctx.font = '10px Segoe UI';
   ctx.textBaseline = 'middle';
 
@@ -119,7 +128,6 @@ export function drawHistogram(canvas, mat, channels) {
     const y = plotY + plotH - frac * plotH;
     const value = frac * niceYMax;
 
-    // Горизонтальная линия
     ctx.strokeStyle = t === 0 ? '#3a4252' : '#232937';
     ctx.lineWidth = 1;
     ctx.beginPath();
@@ -127,22 +135,10 @@ export function drawHistogram(canvas, mat, channels) {
     ctx.lineTo(plotX + plotW, Math.round(y) + 0.5);
     ctx.stroke();
 
-    // Подпись Y
     ctx.fillStyle = '#7a869a';
     ctx.textAlign = 'right';
     ctx.fillText(fmtCount(value), plotX - 6, y);
   }
-
-  // Подпись оси Y
-  ctx.save();
-  ctx.translate(14, plotY + plotH / 2);
-  ctx.rotate(-Math.PI / 2);
-  ctx.fillStyle = '#5a6478';
-  ctx.font = '10px Segoe UI';
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'middle';
-  ctx.fillText('пикселей', 0, 0);
-  ctx.restore();
 
   // ---- Ось X ----
   ctx.font = '10px Segoe UI';
@@ -160,11 +156,8 @@ export function drawHistogram(canvas, mat, channels) {
     ctx.fillStyle = '#7a869a';
     ctx.fillText(String(xv), x, plotY + plotH + 6);
   }
-  // Подпись оси X
-  ctx.fillStyle = '#5a6478';
-  ctx.fillText('яркость', plotX + plotW / 2, plotY + plotH + 16);
 
-  // ---- Графики ----
+  // ---- Графики (заливка) ----
   const colors = ['#ff5c5c', '#4ade80', '#5c9bff'];
 
   ctx.globalCompositeOperation = 'lighter';
@@ -183,12 +176,12 @@ export function drawHistogram(canvas, mat, channels) {
     ctx.fillStyle = colors[c] + '55';
     ctx.fill();
     ctx.strokeStyle = colors[c];
-    ctx.lineWidth = 1.2;
+    ctx.lineWidth = 1.5;
     ctx.stroke();
   }
   ctx.globalCompositeOperation = 'source-over';
 
-  // ---- Легенда каналов в левом верхнем углу ----
+  // ---- Легенда каналов ----
   ctx.font = '11px Segoe UI';
   ctx.textAlign = 'left';
   ctx.textBaseline = 'middle';
@@ -196,16 +189,16 @@ export function drawHistogram(canvas, mat, channels) {
   ['R', 'G', 'B'].forEach((n, i) => {
     if (!show[i]) return;
     ctx.fillStyle = colors[i];
-    ctx.fillRect(lx, plotY + 4, 10, 10);
+    ctx.fillRect(lx, plotY + 4, 8, 8);
     ctx.fillStyle = '#aab3c4';
-    ctx.fillText(n, lx + 14, plotY + 9);
-    lx += 34;
+    ctx.fillText(n, lx + 12, plotY + 9);
+    lx += 30;
   });
 
-  // ---- Информация о максимуме ----
+  // ---- Максимум ----
   ctx.font = '10px Segoe UI';
   ctx.textAlign = 'right';
   ctx.fillStyle = '#7a869a';
-  ctx.fillText(`макс: ${fmtCount(maxVal)} px`, W - PAD_R - 4, plotY + 9);
+  ctx.fillText(`макс: ${fmtCount(maxVal)} px`, W - PAD_R - 6, plotY + 9);
   ctx.textAlign = 'left';
 }

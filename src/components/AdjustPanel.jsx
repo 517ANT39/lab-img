@@ -178,12 +178,11 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast, tick }) {
         {/* Кнопки друг под другом с отступом */}
         <button
           style={{
-            marginTop: 12,
-            background: '#333c4e'
+            marginTop: 8,
           }}
           onClick={apply}
         >
-          ✓ Применить
+          Применить
         </button>
         <button
           style={{
@@ -192,13 +191,8 @@ export default function AdjustPanel({ mats, refreshDisplay, showToast, tick }) {
           }}
           onClick={reset}
         >
-          ↺ Сброс
+          ↺ Сбросить параметры
         </button>
-
-        <div className="hint" style={{ marginTop: 10 }}>
-          Ползунки остаются на своих значениях после применения.
-          <b> Применить</b> пересчитывает изображение, <b>Сброс</b> — возвращает к исходному.
-        </div>
       </div>
     </details>
   );

@@ -5,7 +5,6 @@ import { showMat, toGray, grayToRGB } from './cv/utils.js';
 import { drawHistogram } from './cv/histogram.js';
 
 import Section from './components/Section.jsx';
-import ColorProfileSelector from './components/ColorProfileSelector.jsx';
 import ColorModelPanel from './components/ColorModelPanel.jsx';
 import ImageInfo from './components/ImageInfo.jsx';
 import AdjustPanel from './components/AdjustPanel.jsx';
@@ -17,6 +16,12 @@ import KeypointsPanel from './components/KeypointsPanel.jsx';
 import VideoPanel from './components/VideoPanel.jsx';
 import SimilarPanel from './components/SimilarPanel.jsx';
 
+const MAIN_PAGES = [
+  { id: 'image', label: '1. Обработка изображений' },
+  { id: 'compare', label: '2. Сравнение изображений' },
+  { id: 'video', label: '3. Обработка видео' }
+];
+
 export default function App() {
   const { ready } = useOpenCV();
   const [meta, setMeta] = useState(null);
@@ -26,18 +31,16 @@ export default function App() {
   const [toast, setToast] = useState('');
   const [tick, setTick] = useState(0);
 
-  const [openAreas, setOpenAreas] = useState({
-    image: true, similar: true, video: true
-  });
+  const [currentPage, setCurrentPage] = useState('image');
+  const [zoom, setZoom] = useState(1);
+  
+  const [histHeight, setHistHeight] = useState(150);
+  const isDragging = useRef(false);
+  const startY = useRef(0);
+  const startHeight = useRef(0);
 
   const mats = useRef({
-    orig: null,
-    cur: null,
-    before: null,
-    base: null,
-    kpBase: null,
-    history: [],
-    panelBases: {}
+    orig: null, cur: null, before: null, base: null, kpBase: null, history: [], panelBases: {}
   });
 
   const cvResultRef = useRef(null);
@@ -51,12 +54,42 @@ export default function App() {
     showToast._t = setTimeout(() => setToast(''), ms);
   }, []);
 
-  // Форсирует перерисовку App
   const refreshDisplay = useCallback(() => {
     setTick(t => t + 1);
   }, []);
 
-  // Отрисовка canvas и гистограммы при каждом изменении tick/каналов/области
+  const onMouseDown = (e) => {
+    isDragging.current = true;
+    startY.current = e.clientY;
+    startHeight.current = histHeight;
+    document.body.style.cursor = 'ns-resize';
+    document.body.style.userSelect = 'none';
+  };
+
+  useEffect(() => {
+    const onMouseMove = (e) => {
+      if (!isDragging.current) return;
+      const delta = startY.current - e.clientY;
+      const newHeight = Math.max(100, Math.min(600, startHeight.current + delta));
+      setHistHeight(newHeight);
+    };
+
+    const onMouseUp = () => {
+      if (isDragging.current) {
+        isDragging.current = false;
+        document.body.style.cursor = '';
+        document.body.style.userSelect = '';
+      }
+    };
+
+    window.addEventListener('mousemove', onMouseMove);
+    window.addEventListener('mouseup', onMouseUp);
+    return () => {
+      window.removeEventListener('mousemove', onMouseMove);
+      window.removeEventListener('mouseup', onMouseUp);
+    };
+  }, []);
+
   useEffect(() => {
     if (mats.current.cur && cvResultRef.current) {
       showMat(mats.current.cur, cvResultRef.current);
@@ -64,23 +97,27 @@ export default function App() {
     if (mats.current.cur && histAfterRef.current) {
       drawHistogram(histAfterRef.current, mats.current.cur, channels);
     }
-  }, [tick, channels, openAreas.image]);
+  }, [tick, channels, currentPage, histHeight]);
 
-  // Очистить историю, все базы панелей и базу keypoints
+  useEffect(() => {
+    if (!histAfterRef.current) return;
+    const observer = new ResizeObserver(() => {
+      if (mats.current.cur && histAfterRef.current) {
+        drawHistogram(histAfterRef.current, mats.current.cur, channels);
+      }
+    });
+    observer.observe(histAfterRef.current);
+    return () => observer.disconnect();
+  }, [channels]);
+
   const clearAllBases = useCallback(() => {
     const m = mats.current;
-    while (m.history.length) {
-      const h = m.history.pop();
-      try { h.delete(); } catch (_) { }
-    }
-    for (const k in m.panelBases) {
-      try { m.panelBases[k].delete(); } catch (_) { }
-    }
+    while (m.history.length) { const h = m.history.pop(); try { h.delete(); } catch (_) { } }
+    for (const k in m.panelBases) { try { m.panelBases[k].delete(); } catch (_) { } }
     m.panelBases = {};
     if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
   }, []);
 
-  // Удалить базы всех панелей, кроме указанной
   const clearOtherBases = useCallback((keepKey) => {
     const m = mats.current;
     for (const k in m.panelBases) {
@@ -88,14 +125,9 @@ export default function App() {
       try { m.panelBases[k].delete(); } catch (_) { }
       delete m.panelBases[k];
     }
-    // Если операция не от keypoints — сбрасываем kpBase тоже
-    if (keepKey !== 'keypoints' && m.kpBase) {
-      try { m.kpBase.delete(); } catch (_) { }
-      m.kpBase = null;
-    }
+    if (keepKey !== 'keypoints' && m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
   }, []);
 
-  // ---- Загрузка изображения ----
   const handleFileUpload = useCallback((file) => {
     if (!file || !file.type.startsWith('image/')) { showToast('Это не изображение'); return; }
     const url = URL.createObjectURL(file);
@@ -134,14 +166,11 @@ export default function App() {
 
         setMeta({
           name: file.name, type: file.type, size: file.size,
-          lastModified: file.lastModified,
-          width: img.naturalWidth, height: img.naturalHeight,
-          hasAlpha,
-          bitsPerChannelSource: 8,
-          channelsSource: hasAlpha ? 4 : 3
+          lastModified: file.lastModified, width: img.naturalWidth, height: img.naturalHeight,
+          hasAlpha, bitsPerChannelSource: 8, channelsSource: hasAlpha ? 4 : 3
         });
 
-        setOpenAreas((s) => s.image ? s : { ...s, image: true });
+        setZoom(1);
         refreshDisplay();
         showToast('Изображение загружено');
         URL.revokeObjectURL(url);
@@ -154,7 +183,6 @@ export default function App() {
     img.src = url;
   }, [refreshDisplay, showToast, clearAllBases]);
 
-  // ---- Сброс к исходному ----
   const handleReset = useCallback(() => {
     const m = mats.current;
     if (!m.orig) { showToast('Изображение не загружено'); return; }
@@ -165,11 +193,11 @@ export default function App() {
     m.cur = m.orig.clone();
     m.before = null;
     m.base = null;
+    setZoom(1);
     refreshDisplay();
     showToast('Сброшено к исходному');
   }, [refreshDisplay, showToast, clearAllBases]);
 
-  // ---- Глобальный откат ----
   const handleUndo = useCallback(() => {
     const m = mats.current;
     if (!m.history.length) { showToast('Нечего откатывать'); return; }
@@ -183,7 +211,6 @@ export default function App() {
     showToast('Откат выполнен');
   }, [refreshDisplay, showToast, clearAllBases]);
 
-  // ---- Применение операции для панелей 4, 7-10 ----
   const applyOp = useCallback((fn, opName, panelKey) => {
     const m = mats.current;
     if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
@@ -197,7 +224,6 @@ export default function App() {
     }
     if (!out) { showToast('Пустой результат'); return; }
 
-    // База панели — из СТАРОГО cur, ДО подмены
     if (panelKey) {
       clearOtherBases(panelKey);
       if (!m.panelBases[panelKey]) {
@@ -208,10 +234,7 @@ export default function App() {
     }
 
     m.history.push(m.cur.clone());
-    if (m.history.length > 20) {
-      const old = m.history.shift();
-      try { old.delete(); } catch (_) { }
-    }
+    if (m.history.length > 20) { const old = m.history.shift(); try { old.delete(); } catch (_) { } }
 
     if (m.before) m.before.delete();
     m.before = m.cur.clone();
@@ -226,7 +249,6 @@ export default function App() {
     if (opName) showToast(opName);
   }, [refreshDisplay, showToast, clearOtherBases]);
 
-  // ---- Отмена операции панели ----
   const resetPanel = useCallback((panelKey, label) => {
     const m = mats.current;
     if (!m.cur) { showToast('Изображение не загружено'); return; }
@@ -259,11 +281,7 @@ export default function App() {
 
   const hasImage = !!mats.current.cur;
 
-  const toggleArea = (key) => (e) => {
-    if (e.target !== e.currentTarget) return;
-    setOpenAreas((s) => ({ ...s, [key]: e.target.open }));
-  };
-
+  const hasBaseGray = !!(mats.current.panelBases && mats.current.panelBases.gray);
   const hasBaseBW = !!(mats.current.panelBases && mats.current.panelBases.bw);
   const hasBaseMorph = !!(mats.current.panelBases && mats.current.panelBases.morph);
   const hasBaseFilters = !!(mats.current.panelBases && mats.current.panelBases.filters);
@@ -272,38 +290,52 @@ export default function App() {
   return (
     <>
       <div id="app" data-tick={tick}>
-        <details className="area" open={openAreas.image} onToggle={toggleArea('image')}>
-          <summary className="area-header">
-            <span className="area-num">1</span>
-            <h2>Обработка изображений</h2>
-            <span className="area-chevron">▾</span>
-          </summary>
+        <header className="main-nav">
+          {MAIN_PAGES.map(page => (
+            <button
+              key={page.id}
+              className={`nav-btn ${currentPage === page.id ? 'active' : ''}`}
+              onClick={() => setCurrentPage(page.id)}
+            >
+              {page.label}
+            </button>
+          ))}
+        </header>
 
-          <div className="area-body area-image-body">
+        {currentPage === 'image' && (
+          <div className="page-content image-page-layout">
             <aside className="controls">
               <Section title="Загрузка изображения" defaultOpen>
                 <input type="file" accept="image/*"
                   onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])} />
                 <div className="btn-row">
                   <button className="sec" onClick={handleReset}>↺ Сброс</button>
+                  <button className="sec" onClick={handleUndo}>↶ Откат</button>
                 </div>
                 <div className="hint">Клик по изображению — «пипетка».</div>
               </Section>
 
-              <Section title="Информация об изображении" defaultOpen>
+              <Section title="Информация" defaultOpen>
                 <ImageInfo meta={meta} curRGB={mats.current.cur} />
               </Section>
 
               <Section title="Цветовые модели" defaultOpen>
-                {/* <ColorProfileSelector profile={profile} onChange={setProfile} /> */}
-                <div style={{ height: 12 }} />
                 <ColorModelPanel profile={profile} pixel={pixel} onPixelChange={setPixel} />
               </Section>
 
+              {/* ОБНОВЛЕННЫЙ БЛОК ГРАДАЦИЙ СЕРОГО С КНОПКОЙ СБРОСА */}
               <Section title="Градации серого">
-                <button onClick={() => applyOp((src) => grayToRGB(toGray(src)), 'Полутоновое')}>
-                  Преобразовать в оттенки серого
-                </button>
+                <div className="btn-row" style={{ marginTop: 0 }}>
+                  <button onClick={() => applyOp((src) => grayToRGB(toGray(src)), 'Полутоновое', 'gray')}>
+                    В оттенки серого
+                  </button>
+                  <button
+                    className={hasBaseGray ? 'red' : 'sec'}
+                    onClick={() => resetPanel('gray', 'Градации серого')}
+                  >
+                    ↺ Сброс
+                  </button>
+                </div>
               </Section>
 
               <AdjustPanel
@@ -337,18 +369,21 @@ export default function App() {
                 resetPanel={resetPanel}
                 hasChanges={hasBaseEdge}
               />
-
-              <KeypointsPanel
-                mats={mats}
-                canvasRef={cvResultRef}
-                showToast={showToast}
-              />
+              <KeypointsPanel mats={mats} canvasRef={cvResultRef} showToast={showToast} />
             </aside>
 
             <div className="viewer">
               <div className="pane pane-image">
                 <div className="pane-title">
                   <span>Изображение</span>
+                  
+                  <div className="zoom-controls">
+                    <button className="sec" onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} title="Уменьшить">-</button>
+                    <span className="zoom-label">{Math.round(zoom * 100)}%</span>
+                    <button className="sec" onClick={() => setZoom(z => Math.min(4, z + 0.25))} title="Увеличить">+</button>
+                    <button className="sec" onClick={() => setZoom(1)} title="Сбросить">1:1</button>
+                  </div>
+
                   <span>
                     {mats.current.cur
                       ? `${mats.current.cur.cols} × ${mats.current.cur.rows}`
@@ -356,31 +391,42 @@ export default function App() {
                   </span>
                 </div>
 
-                {!hasImage && (
-                  <div className="image-placeholder">
-                    Изображение не загружено.<br />
-                    Выберите файл в панели «Загрузка изображения» слева.
-                  </div>
-                )}
-
-                <canvas
-                  ref={cvResultRef}
-                  style={{ display: hasImage ? 'block' : 'none' }}
-                  onClick={(e) => {
-                    const m = mats.current.cur;
-                    if (!m) return;
-                    const rect = e.target.getBoundingClientRect();
-                    const x = Math.floor((e.clientX - rect.left) * m.cols / rect.width);
-                    const y = Math.floor((e.clientY - rect.top) * m.rows / rect.height);
-                    if (x < 0 || y < 0 || x >= m.cols || y >= m.rows) return;
-                    const px = m.ucharPtr(y, x);
-                    setPixel({ r: px[0], g: px[1], b: px[2] });
-                    showToast(`Пиксель (${x},${y}) = RGB(${px[0]},${px[1]},${px[2]})`);
-                  }}
-                />
+                <div className="image-scroll-container">
+                  {!hasImage && (
+                    <div className="image-placeholder">
+                      Изображение не загружено.<br />Выберите файл в меню слева.
+                    </div>
+                  )}
+                  
+                  <canvas
+                    ref={cvResultRef}
+                    style={{
+                      display: hasImage ? 'block' : 'none',
+                      width: `${zoom * 100}%`,
+                      maxWidth: zoom <= 1 ? '100%' : 'none',
+                      height: 'auto',
+                      maxHeight: zoom <= 1 ? '100%' : 'none'
+                    }}
+                    onClick={(e) => {
+                      const m = mats.current.cur;
+                      if (!m) return;
+                      const rect = e.target.getBoundingClientRect();
+                      const x = Math.floor((e.clientX - rect.left) * m.cols / rect.width);
+                      const y = Math.floor((e.clientY - rect.top) * m.rows / rect.height);
+                      if (x < 0 || y < 0 || x >= m.cols || y >= m.rows) return;
+                      const px = m.ucharPtr(y, x);
+                      setPixel({ r: px[0], g: px[1], b: px[2] });
+                      showToast(`Пиксель (${x},${y}) = RGB(${px[0]},${px[1]},${px[2]})`);
+                    }}
+                  />
+                </div>
               </div>
 
-              <div className="pane pane-hist">
+              <div className="resizer" onMouseDown={onMouseDown}>
+                <div className="resizer-handle"></div>
+              </div>
+
+              <div className="pane pane-hist" style={{ height: `${histHeight}px` }}>
                 <div className="pane-title">
                   <span>Гистограмма</span>
                   <div className="hist-channels">
@@ -397,33 +443,33 @@ export default function App() {
               </div>
             </div>
           </div>
-        </details>
+        )}
 
-        <details className="area" open={openAreas.similar} onToggle={toggleArea('similar')}>
-          <summary className="area-header">
-            <span className="area-num">2</span>
-            <h2>Поиск похожих изображений</h2>
-            <span className="area-chevron">▾</span>
-          </summary>
-          <div className="area-body">
-            <SimilarPanel showToast={showToast} />
+        {currentPage === 'compare' && (
+          <div className="page-content single-page">
+            <div className="pane">
+              <div className="pane-title"><span>Поиск похожих изображений</span></div>
+              <div className="pane-body" style={{ maxHeight: 'none' }}>
+                <SimilarPanel showToast={showToast} />
+              </div>
+            </div>
           </div>
-        </details>
+        )}
 
-        <details className="area" open={openAreas.video} onToggle={toggleArea('video')}>
-          <summary className="area-header">
-            <span className="area-num">3</span>
-            <h2>Работа с видео</h2>
-            <span className="area-chevron">▾</span>
-          </summary>
-          <div className="area-body">
-            <VideoPanel
-              showToast={showToast}
-              videoElRef={videoElRef}
-              videoCanvasRef={videoCanvasRef}
-            />
+        {currentPage === 'video' && (
+          <div className="page-content single-page">
+            <div className="pane">
+              <div className="pane-title"><span>Обработка видео</span></div>
+              <div className="pane-body" style={{ maxHeight: 'none' }}>
+                <VideoPanel
+                  showToast={showToast}
+                  videoElRef={videoElRef}
+                  videoCanvasRef={videoCanvasRef}
+                />
+              </div>
+            </div>
           </div>
-        </details>
+        )}
       </div>
 
       <video ref={videoElRef} style={{ display: 'none' }} playsInline muted loop />
