@@ -331,7 +331,6 @@ export default function App() {
                   <button className="sec" onClick={handleReset}>↺ Сброс</button>
                   <button className="sec" onClick={handleUndo}>↶ Откат</button>
                 </div>
-                <div className="hint">Клик по изображению — «пипетка».</div>
               </Section>
 
               <Section title="Информация" defaultOpen>
