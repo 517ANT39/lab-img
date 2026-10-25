@@ -1,44 +1,48 @@
-import { useState, useRef } from 'react';
+import { useState, useEffect } from 'react';
 import cv from '../cv/cvInstance.js';
 
-export default function AdjustPanel({ mats, applyOp, resetPanel, showToast }) {
+export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasChanges }) {
   const [bri, setBri] = useState(0);
   const [con, setCon] = useState(100);
   const [sat, setSat] = useState(100);
-  const [hasChanges, setHasChanges] = useState(false);
   
-  // Запоминаем последние применённые значения
-  const appliedRef = useRef({ bri: 0, con: 100, sat: 100 });
+  // Локальный флаг: двигал ли пользователь ползунки после последнего применения
+  const [isDirty, setIsDirty] = useState(false);
 
-  // Проверяем глобальный флаг, а не просто цвет пикселей
+  // Синхронизация: если база сброшена (глобальный сброс или откат), ползунки возвращаются в 0
+  useEffect(() => {
+    if (!hasChanges) {
+      setBri(0);
+      setCon(100);
+      setSat(100);
+      setIsDirty(false);
+    }
+  }, [hasChanges]);
+
+  // Проверяем, была ли нажата кнопка "В оттенки серого"
   const isGrayFilter = !!(mats.current && mats.current.isGrayFilter);
 
-  const updateHasChanges = (b, c, s) => {
-    const a = appliedRef.current;
-    setHasChanges(b !== a.bri || c !== a.con || s !== a.sat);
-  };
-
-  const onChangeBri = (v) => { setBri(v); updateHasChanges(v, con, sat); };
-  const onChangeCon = (v) => { setCon(v); updateHasChanges(bri, v, sat); };
+  const onChangeBri = (v) => { setBri(v); setIsDirty(true); };
+  const onChangeCon = (v) => { setCon(v); setIsDirty(true); };
   
   const onChangeSat = (v) => {
-    // Блокируем ТОЛЬКО если градации серого были применены кнопкой
+    // Блокируем, если включен фильтр серого и пытаемся увеличить насыщенность
     if (isGrayFilter && v > 0) {
       showToast('Применены градации серого — насыщенность недоступна', 2500);
       return;
     }
     setSat(v);
-    updateHasChanges(bri, con, v);
+    setIsDirty(true);
   };
 
   const apply = () => {
-    if (!hasChanges) { showToast('Нет изменений для применения'); return; }
+    if (!isDirty) { showToast('Нет изменений для применения'); return; }
 
     const b = bri;
     const c = con / 100;
     const s = sat / 100;
 
-    // Используем общую систему App.jsx
+    // Применяем через общую систему App.jsx
     applyOp((src) => {
       const res = new cv.Mat();
       src.convertTo(res, -1, c, b);
@@ -60,18 +64,11 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast }) {
       return res;
     }, 'Яркость/Контраст', 'adjust');
 
-    appliedRef.current = { bri, con, sat };
-    setHasChanges(false);
+    setIsDirty(false); // Применили — теперь изменений нет
   };
 
   const reset = () => {
-    setBri(0); 
-    setCon(100); 
-    setSat(100);
-    appliedRef.current = { bri: 0, con: 100, sat: 100 };
-    setHasChanges(false);
-    
-    // Используем общую систему для отмены
+    // Вызываем общую систему сброса (сбрасывает картинку к базе)
     resetPanel('adjust', 'Яркость/Контраст');
   };
 
@@ -89,11 +86,11 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast }) {
         <input type="range" min="0" max="300" value={sat} onChange={(e) => onChangeSat(+e.target.value)} />
 
         <div className="btn-stack">
-          <button className={hasChanges ? 'green' : 'sec'} onClick={apply}>
+          <button className={isDirty ? 'green' : 'sec'} onClick={apply}>
             ✓ Применить
           </button>
-          <button className="sec" onClick={reset}>
-            ↺ Сбросить параметры
+          <button className={hasChanges ? 'red' : 'sec'} onClick={reset}>
+            ↺ Сброс
           </button>
         </div>
 

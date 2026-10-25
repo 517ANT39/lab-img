@@ -30,12 +30,11 @@ export default function App() {
   const [channels, setChannels] = useState({ r: true, g: true, b: true });
   const [toast, setToast] = useState('');
   const [tick, setTick] = useState(0);
+  
+  const [historyLen, setHistoryLen] = useState(0);
 
   const [currentPage, setCurrentPage] = useState('image');
   const [zoom, setZoom] = useState(1);
-  
-  // Ключ для принудительного сброса внутреннего состояния AdjustPanel
-  const [adjustKey, setAdjustKey] = useState(0);
 
   const [histHeight, setHistHeight] = useState(150);
   const isDragging = useRef(false);
@@ -44,7 +43,7 @@ export default function App() {
 
   const mats = useRef({
     orig: null, cur: null, before: null, base: null, kpBase: null,
-    isGrayFilter: false, // Флаг: были ли применены градации серого
+    isGrayFilter: false,
     history: [], panelBases: {}
   });
 
@@ -60,6 +59,7 @@ export default function App() {
   }, []);
 
   const refreshDisplay = useCallback(() => {
+    setHistoryLen(mats.current.history.length);
     setTick(t => t + 1);
   }, []);
 
@@ -121,6 +121,7 @@ export default function App() {
     for (const k in m.panelBases) { try { m.panelBases[k].delete(); } catch (_) { } }
     m.panelBases = {};
     if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
+    setHistoryLen(0);
   }, []);
 
   const clearOtherBases = useCallback((keepKey) => {
@@ -178,7 +179,6 @@ export default function App() {
         });
 
         setZoom(1);
-        setAdjustKey(k => k + 1); // Сбрасываем AdjustPanel
         refreshDisplay();
         showToast('Изображение загружено');
         URL.revokeObjectURL(url);
@@ -205,7 +205,6 @@ export default function App() {
     m.before = null;
     m.base = null;
     setZoom(1);
-    setAdjustKey(k => k + 1); // Сбрасываем AdjustPanel
     refreshDisplay();
     showToast('Сброшено к исходному');
   }, [refreshDisplay, showToast, clearAllBases]);
@@ -213,19 +212,20 @@ export default function App() {
   const handleUndo = useCallback(() => {
     const m = mats.current;
     if (!m.history.length) { showToast('Нечего откатывать'); return; }
+    
     const prev = m.history.pop();
+    
+    clearOtherBases(null);
+    m.isGrayFilter = false;
+
     if (m.before) m.before.delete();
     m.before = m.cur;
     m.cur = prev;
     if (m.base) { m.base.delete(); m.base = null; }
-    clearAllBases();
-    
-    m.isGrayFilter = false;
 
-    setAdjustKey(k => k + 1); // Сбрасываем AdjustPanel
     refreshDisplay();
     showToast('Откат выполнен');
-  }, [refreshDisplay, showToast, clearAllBases]);
+  }, [refreshDisplay, showToast, clearOtherBases]);
 
   const applyOp = useCallback((fn, opName, panelKey) => {
     const m = mats.current;
@@ -271,6 +271,10 @@ export default function App() {
     const base = m.panelBases[panelKey];
     if (base) {
       const res = base.clone();
+      
+      m.history.push(m.cur.clone());
+      if (m.history.length > 20) { const old = m.history.shift(); try { old.delete(); } catch (_) { } }
+
       const oldCur = m.cur;
       m.cur = res;
       try { oldCur.delete(); } catch (_) { }
@@ -281,13 +285,15 @@ export default function App() {
 
       if (m.before) { m.before.delete(); m.before = null; }
       if (m.base) { m.base.delete(); m.base = null; }
+
+      clearOtherBases(null);
       refreshDisplay();
       showToast((label || 'Операция') + ' отменена');
     } else {
       refreshDisplay();
       showToast('Параметры сброшены');
     }
-  }, [refreshDisplay, showToast]);
+  }, [refreshDisplay, showToast, clearOtherBases]);
 
   if (!ready) {
     return (
@@ -300,6 +306,7 @@ export default function App() {
 
   const hasImage = !!mats.current.cur;
 
+  const hasBaseAdjust = !!(mats.current.panelBases && mats.current.panelBases.adjust);
   const hasBaseGray = !!(mats.current.panelBases && mats.current.panelBases.gray);
   const hasBaseBW = !!(mats.current.panelBases && mats.current.panelBases.bw);
   const hasBaseMorph = !!(mats.current.panelBases && mats.current.panelBases.morph);
@@ -329,8 +336,11 @@ export default function App() {
                   onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])} />
                 <div className="btn-row">
                   <button className="sec" onClick={handleReset}>↺ Сброс</button>
-                  <button className="sec" onClick={handleUndo}>↶ Откат</button>
+                  <button className="sec" onClick={handleUndo}>
+                    ↶ Откат ({historyLen})
+                  </button>
                 </div>
+                <div className="hint">Клик по изображению — «пипетка».</div>
               </Section>
 
               <Section title="Информация" defaultOpen>
@@ -356,11 +366,11 @@ export default function App() {
               </Section>
 
               <AdjustPanel
-                key={adjustKey}
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
                 showToast={showToast}
+                hasChanges={hasBaseAdjust}
               />
               
               <BWCorrectionPanel

@@ -63,7 +63,7 @@ export default function MorphologyPanel({ applyOp, resetPanel, hasChanges }) {
 
         <div className="btn-row">
           <button className={hasChanges ? 'red' : 'sec'} onClick={handleReset}>
-            {hasChanges ? '↺ Отменить операцию' : '↺ Сбросить параметры'}
+            ↺ Сброс
           </button>
         </div>
       </div>
