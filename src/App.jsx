@@ -32,6 +32,8 @@ export default function App() {
   const [tick, setTick] = useState(0);
   
   const [historyLen, setHistoryLen] = useState(0);
+  // ЕДИНЫЙ ТРИГГЕР ДЛЯ СБРОСА ВСЕХ ПОЛЗУНКОВ И ТОЧЕК
+  const [globalResetTrigger, setGlobalResetTrigger] = useState(0);
 
   const [currentPage, setCurrentPage] = useState('image');
   const [zoom, setZoom] = useState(1);
@@ -179,6 +181,7 @@ export default function App() {
         });
 
         setZoom(1);
+        setGlobalResetTrigger(p => p + 1); // СБРОС
         refreshDisplay();
         showToast('Изображение загружено');
         URL.revokeObjectURL(url);
@@ -205,6 +208,7 @@ export default function App() {
     m.before = null;
     m.base = null;
     setZoom(1);
+    setGlobalResetTrigger(p => p + 1); // СБРОС
     refreshDisplay();
     showToast('Сброшено к исходному');
   }, [refreshDisplay, showToast, clearAllBases]);
@@ -223,6 +227,7 @@ export default function App() {
     m.cur = prev;
     if (m.base) { m.base.delete(); m.base = null; }
 
+    setGlobalResetTrigger(p => p + 1); // СБРОС
     refreshDisplay();
     showToast('Откат выполнен');
   }, [refreshDisplay, showToast, clearOtherBases]);
@@ -261,6 +266,7 @@ export default function App() {
 
     if (m.base) { m.base.delete(); m.base = null; }
 
+    setGlobalResetTrigger(p => p + 1); // СБРОС ТОЧЕК при любой новой операции
     refreshDisplay();
     if (opName) showToast(opName);
   }, [refreshDisplay, showToast, clearOtherBases]);
@@ -287,6 +293,7 @@ export default function App() {
       if (m.base) { m.base.delete(); m.base = null; }
 
       clearOtherBases(null);
+      setGlobalResetTrigger(p => p + 1); // СБРОС
       refreshDisplay();
       showToast((label || 'Операция') + ' отменена');
     } else {
@@ -371,6 +378,7 @@ export default function App() {
                 resetPanel={resetPanel}
                 showToast={showToast}
                 hasChanges={hasBaseAdjust}
+                resetTrigger={globalResetTrigger}
               />
               
               <BWCorrectionPanel
@@ -397,7 +405,12 @@ export default function App() {
                 resetPanel={resetPanel}
                 hasChanges={hasBaseEdge}
               />
-              <KeypointsPanel mats={mats} canvasRef={cvResultRef} showToast={showToast} />
+              <KeypointsPanel 
+                mats={mats} 
+                canvasRef={cvResultRef} 
+                showToast={showToast} 
+                resetTrigger={globalResetTrigger} 
+              />
             </aside>
 
             <div className="viewer">

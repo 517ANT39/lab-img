@@ -7,13 +7,9 @@ const DEFAULTS = { type: 'harris', th: 25 };
 
 /**
  * Самописная реализация детектора SIFT.
- * Возвращает массив { x, y, size, angle }:
- *   size  — радиус круга (пропорционален σ точки)
- *   angle — доминирующая ориентация градиента (радианы)
  */
 function detectSIFT(grayU8, threshold) {
   const rawPoints = [];
-
   const NUM_OCTAVES = 3;
   const SCALES_PER_OCTAVE = 3;
   const SIGMA = 1.6;
@@ -23,7 +19,6 @@ function detectSIFT(grayU8, threshold) {
 
   const baseFloat = new cv.Mat();
   grayU8.convertTo(baseFloat, cv.CV_32F);
-
   let currentBase = baseFloat.clone();
 
   try {
@@ -67,8 +62,6 @@ function detectSIFT(grayU8, threshold) {
         const next = dogs[s + 1];
         const rows = dog.rows;
         const cols = dog.cols;
-
-        // Реальная сигма этого уровня — нужна для радиуса круга
         const sigmaAtLevel = SIGMA * Math.pow(K, s) * octaveScale;
 
         for (let y = BORDER; y < rows - BORDER; y++) {
@@ -90,7 +83,6 @@ function detectSIFT(grayU8, threshold) {
             }
 
             if (isMax || isMin) {
-              // Ориентация — по оператору Собеля 3×3 в точке
               const gx =
                 dog.floatAt(y - 1, x + 1) + 2 * dog.floatAt(y, x + 1) + dog.floatAt(y + 1, x + 1) -
                 dog.floatAt(y - 1, x - 1) - 2 * dog.floatAt(y, x - 1) - dog.floatAt(y + 1, x - 1);
@@ -104,11 +96,7 @@ function detectSIFT(grayU8, threshold) {
 
               if (px >= 0 && py >= 0 && px < grayU8.cols && py < grayU8.rows) {
                 rawPoints.push({
-                  x: px,
-                  y: py,
-                  size: Math.max(4, sigmaAtLevel * 3),
-                  angle,
-                  v: absV
+                  x: px, y: py, size: Math.max(4, sigmaAtLevel * 3), angle, v: absV
                 });
               }
             }
@@ -127,12 +115,10 @@ function detectSIFT(grayU8, threshold) {
 
   rawPoints.sort((a, b) => b.v - a.v);
 
-  // Дедупликация с учётом размера круга — не накладываем круги друг на друга
   const filtered = [];
   for (const p of rawPoints) {
     let keep = true;
-    const minDist = Math.max(4, p.size * 0.5);
-    const minDist2 = minDist * minDist;
+    const minDist2 = Math.max(4, p.size * 0.5) ** 2;
     for (const q of filtered) {
       const dx = p.x - q.x, dy = p.y - q.y;
       if (dx * dx + dy * dy < minDist2) { keep = false; break; }
@@ -144,10 +130,15 @@ function detectSIFT(grayU8, threshold) {
   return filtered.map(p => ({ x: p.x, y: p.y, size: p.size, angle: p.angle }));
 }
 
-export default function KeypointsPanel({ mats, canvasRef, showToast }) {
+export default function KeypointsPanel({ mats, canvasRef, showToast, resetTrigger }) {
   const [type, setType] = useState(DEFAULTS.type);
   const [th, setTh] = useState(DEFAULTS.th);
   const [points, setPoints] = useState([]);
+
+  // СБРОС ТОЧЕК при нажатии "Откат" или "Сброс" в шапке
+  useEffect(() => {
+    setPoints([]);
+  }, [resetTrigger]);
 
   // Перерисовка canvas при изменении points
   useEffect(() => {
@@ -161,11 +152,9 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
     const ctx = c.getContext('2d');
 
     for (const p of points) {
-      // Если у точки есть size и angle — рисуем SIFT-стиль: круг + вектор
       const isSift = typeof p.size === 'number' && typeof p.angle === 'number';
       const size = isSift ? p.size : 6;
 
-      // Внешний круг — масштаб точки
       ctx.beginPath();
       ctx.arc(p.x, p.y, size, 0, Math.PI * 2);
       ctx.strokeStyle = 'rgba(255, 60, 60, 0.9)';
@@ -173,14 +162,12 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
       ctx.stroke();
 
       if (isSift) {
-        // Внутренний круг — ядро
         ctx.beginPath();
         ctx.arc(p.x, p.y, Math.max(1.5, size * 0.3), 0, Math.PI * 2);
         ctx.strokeStyle = 'rgba(255, 200, 0, 0.9)';
         ctx.lineWidth = 1;
         ctx.stroke();
 
-        // Вектор ориентации с наконечником
         const len = size;
         const ex = p.x + Math.cos(p.angle) * len;
         const ey = p.y + Math.sin(p.angle) * len;
@@ -192,7 +179,6 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
         ctx.lineWidth = 2;
         ctx.stroke();
 
-        // Наконечник стрелки
         const headLen = Math.max(3, size * 0.25);
         const headAngle = Math.PI / 6;
         ctx.beginPath();
@@ -208,7 +194,6 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
         );
         ctx.stroke();
       } else {
-        // Harris / FAST — маленькая точка в центре, как было раньше
         ctx.beginPath();
         ctx.arc(p.x, p.y, 1.5, 0, Math.PI * 2);
         ctx.fillStyle = 'rgba(255, 255, 0, 1)';
@@ -226,7 +211,6 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
 
     try {
       if (type === 'harris') {
-        // ========== HARRIS ==========
         const dst = new cv.Mat();
         cv.cornerHarris(g, dst, 2, 3, 0.04);
         const dil = new cv.Mat();
@@ -243,7 +227,6 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
         dst.delete(); dil.delete(); k.delete();
 
       } else if (type === 'fast') {
-        // ========== FAST (jsfeat) ==========
         if (typeof jsfeat === 'undefined') throw new Error('jsfeat не загружен');
         const width = g.cols, height = g.rows;
         const imgU8 = new jsfeat.matrix_t(width, height, jsfeat.U8C1_t);
@@ -255,7 +238,6 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
         for (let i = 0; i < count; i++) detected.push({ x: corners[i].x, y: corners[i].y });
 
       } else if (type === 'orb') {
-        // ========== ORB ==========
         const orb = new cv.ORB(500);
         const kp = new cv.KeyPointVector();
         const mask = new cv.Mat();
@@ -267,7 +249,6 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
         kp.delete(); mask.delete(); orb.delete();
 
       } else if (type === 'sift') {
-        // ========== SIFT (самописный) ==========
         const result = detectSIFT(g, th);
         for (const p of result) detected.push(p);
       }
@@ -286,7 +267,6 @@ export default function KeypointsPanel({ mats, canvasRef, showToast }) {
     }
 
     setPoints(detected);
-    // showToast(`Найдено точек: ${detected.length}`);
   };
 
   const handleReset = () => {
