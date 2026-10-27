@@ -163,9 +163,6 @@ export default function SimilarPanel({ showToast }) {
             <div style={{ fontSize: 12, color: '#96a0b3', lineHeight: 1.7 }}>
               1. <b style={{ color: '#e9edf5' }}>{images[best.i].name}</b><br />
               2. <b style={{ color: '#e9edf5' }}>{images[best.j].name}</b><br />
-              Корреляция HSV-гистограмм:{' '}
-              <b style={{ color: '#4f9cf9' }}>{best.score.toFixed(4)}</b>
-              <span className="badge">{(best.score * 100).toFixed(1)}%</span>
             </div>
           </div>
         )}
