@@ -32,8 +32,8 @@ export default function App() {
   const [tick, setTick] = useState(0);
   
   const [historyLen, setHistoryLen] = useState(0);
-  // ЕДИНЫЙ ТРИГГЕР ДЛЯ СБРОСА ВСЕХ ПОЛЗУНКОВ И ТОЧЕК
   const [globalResetTrigger, setGlobalResetTrigger] = useState(0);
+  const [isGrayMode, setIsGrayMode] = useState(false);
 
   const [currentPage, setCurrentPage] = useState('image');
   const [zoom, setZoom] = useState(1);
@@ -130,6 +130,8 @@ export default function App() {
     const m = mats.current;
     for (const k in m.panelBases) {
       if (k === keepKey) continue;
+      // Сохраняем базы 'gray' и 'adjust' друг для друга
+      if ((keepKey === 'gray' || keepKey === 'adjust') && (k === 'gray' || k === 'adjust')) continue;
       try { m.panelBases[k].delete(); } catch (_) { }
       delete m.panelBases[k];
     }
@@ -168,6 +170,7 @@ export default function App() {
         clearAllBases();
         
         m.isGrayFilter = false;
+        setIsGrayMode(false);
 
         m.orig = rgb;
         m.cur = rgb.clone();
@@ -181,7 +184,7 @@ export default function App() {
         });
 
         setZoom(1);
-        setGlobalResetTrigger(p => p + 1); // СБРОС
+        setGlobalResetTrigger(p => p + 1);
         refreshDisplay();
         showToast('Изображение загружено');
         URL.revokeObjectURL(url);
@@ -203,12 +206,13 @@ export default function App() {
     clearAllBases();
     
     m.isGrayFilter = false;
+    setIsGrayMode(false);
 
     m.cur = m.orig.clone();
     m.before = null;
     m.base = null;
     setZoom(1);
-    setGlobalResetTrigger(p => p + 1); // СБРОС
+    setGlobalResetTrigger(p => p + 1);
     refreshDisplay();
     showToast('Сброшено к исходному');
   }, [refreshDisplay, showToast, clearAllBases]);
@@ -221,13 +225,14 @@ export default function App() {
     
     clearOtherBases(null);
     m.isGrayFilter = false;
+    setIsGrayMode(false);
 
     if (m.before) m.before.delete();
     m.before = m.cur;
     m.cur = prev;
     if (m.base) { m.base.delete(); m.base = null; }
 
-    setGlobalResetTrigger(p => p + 1); // СБРОС
+    setGlobalResetTrigger(p => p + 1);
     refreshDisplay();
     showToast('Откат выполнен');
   }, [refreshDisplay, showToast, clearOtherBases]);
@@ -252,7 +257,13 @@ export default function App() {
       clearOtherBases(null);
     }
 
-    if (panelKey === 'gray') m.isGrayFilter = true;
+    if (panelKey === 'gray') {
+      m.isGrayFilter = true;
+      setIsGrayMode(true);
+    } else if (panelKey === 'adjust') {
+      m.isGrayFilter = false;
+      setIsGrayMode(false);
+    }
 
     m.history.push(m.cur.clone());
     if (m.history.length > 20) { const old = m.history.shift(); try { old.delete(); } catch (_) { } }
@@ -266,7 +277,10 @@ export default function App() {
 
     if (m.base) { m.base.delete(); m.base = null; }
 
-    setGlobalResetTrigger(p => p + 1); // СБРОС ТОЧЕК при любой новой операции
+    // НЕ сбрасываем AdjustPanel триггером при его собственных операциях и сером цвете
+    if (panelKey !== 'adjust' && panelKey !== 'gray') {
+      setGlobalResetTrigger(p => p + 1);
+    }
     refreshDisplay();
     if (opName) showToast(opName);
   }, [refreshDisplay, showToast, clearOtherBases]);
@@ -287,13 +301,16 @@ export default function App() {
       try { base.delete(); } catch (_) { }
       delete m.panelBases[panelKey];
       
-      if (panelKey === 'gray') m.isGrayFilter = false;
+      if (panelKey === 'gray' || panelKey === 'adjust') {
+        m.isGrayFilter = false;
+        setIsGrayMode(false);
+      }
 
       if (m.before) { m.before.delete(); m.before = null; }
       if (m.base) { m.base.delete(); m.base = null; }
 
-      clearOtherBases(null);
-      setGlobalResetTrigger(p => p + 1); // СБРОС
+      clearOtherBases(panelKey); // Передаем panelKey, чтобы не задеть оставшуюся базу
+      setGlobalResetTrigger(p => p + 1);
       refreshDisplay();
       showToast((label || 'Операция') + ' отменена');
     } else {
@@ -378,7 +395,7 @@ export default function App() {
                 resetPanel={resetPanel}
                 showToast={showToast}
                 hasChanges={hasBaseAdjust}
-                resetTrigger={globalResetTrigger}
+                isGrayMode={isGrayMode}
               />
               
               <BWCorrectionPanel
@@ -409,7 +426,7 @@ export default function App() {
                 mats={mats} 
                 canvasRef={cvResultRef} 
                 showToast={showToast} 
-                resetTrigger={globalResetTrigger} 
+                historyLen={historyLen} 
               />
             </aside>
 

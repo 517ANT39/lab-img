@@ -1,13 +1,13 @@
 import { useState, useEffect } from 'react';
 import cv from '../cv/cvInstance.js';
 
-export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasChanges }) {
+export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasChanges, isGrayMode }) {
   const [bri, setBri] = useState(0);
   const [con, setCon] = useState(100);
   const [sat, setSat] = useState(100);
   const [isDirty, setIsDirty] = useState(false);
 
-  // Синхронизация: если база сброшена (глобальный сброс или откат), ползунки возвращаются в 0
+  // Полный сброс, только если база была полностью уничтожена (сброс, откат, другой фильтр)
   useEffect(() => {
     if (!hasChanges) {
       setBri(0);
@@ -17,13 +17,18 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
     }
   }, [hasChanges]);
 
-  const isGrayFilter = !!(mats.current && mats.current.isGrayFilter);
+  // Сброс ТОЛЬКО насыщенности при включении градаций серого
+  useEffect(() => {
+    if (isGrayMode) {
+      setSat(100);
+    }
+  }, [isGrayMode]);
 
   const onChangeBri = (v) => { setBri(v); setIsDirty(true); };
   const onChangeCon = (v) => { setCon(v); setIsDirty(true); };
   
   const onChangeSat = (v) => {
-    if (isGrayFilter && v > 0) {
+    if (isGrayMode && v > 0) {
       showToast('Применены градации серого — насыщенность недоступна', 2500);
       return;
     }
@@ -39,7 +44,6 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
     const s = sat / 100;
 
     applyOp((src) => {
-      // ВАЖНО: берем базовое изображение (до первого применения), чтобы избежать накопления эффекта
       const base = (mats.current.panelBases && mats.current.panelBases.adjust) 
         ? mats.current.panelBases.adjust 
         : src;
@@ -47,7 +51,7 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
       const res = new cv.Mat();
       base.convertTo(res, -1, c, b);
       
-      if (Math.abs(s - 1) > 0.001 && !isGrayFilter) {
+      if (Math.abs(s - 1) > 0.001 && !isGrayMode) {
         const hsv = new cv.Mat();
         cv.cvtColor(res, hsv, cv.COLOR_RGB2HSV);
         const ch = new cv.MatVector();
