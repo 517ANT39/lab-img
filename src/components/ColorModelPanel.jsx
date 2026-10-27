@@ -227,11 +227,11 @@ export default function ColorModelPanel({ profile, pixel, onPixelChange }) {
           <div className="cm-card" key={model.key}>
             <div className="cm-card-header" style={{ borderLeftColor: model.color }}>
               <span style={{ color: model.color }}>{model.label}</span>
-              {achromatic && (
+              {/* {achromatic && (
                 <span className="cm-warn" title="S ≈ 0 — оттенок не влияет на цвет">
                   ⚠ серый: H не влияет
                 </span>
-              )}
+              )} */}
             </div>
             {model.fields.map((def, i) => (
               <ChannelRow

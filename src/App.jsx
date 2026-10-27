@@ -38,10 +38,7 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('image');
   const [zoom, setZoom] = useState(1);
 
-  const [histHeight, setHistHeight] = useState(150);
-  const isDragging = useRef(false);
-  const startY = useRef(0);
-  const startHeight = useRef(0);
+  const scrollContainerRef = useRef(null);
 
   const mats = useRef({
     orig: null, cur: null, before: null, base: null, kpBase: null,
@@ -65,37 +62,21 @@ export default function App() {
     setTick(t => t + 1);
   }, []);
 
-  const onMouseDown = (e) => {
-    isDragging.current = true;
-    startY.current = e.clientY;
-    startHeight.current = histHeight;
-    document.body.style.cursor = 'ns-resize';
-    document.body.style.userSelect = 'none';
-  };
-
+  // --- ЗУМ КОЛЕСИКОМ МЫШИ ---
   useEffect(() => {
-    const onMouseMove = (e) => {
-      if (!isDragging.current) return;
-      const delta = startY.current - e.clientY;
-      const newHeight = Math.max(100, Math.min(600, startHeight.current + delta));
-      setHistHeight(newHeight);
+    const el = scrollContainerRef.current;
+    if (!el) return;
+
+    const handleWheel = (e) => {
+      e.preventDefault(); // Останавливаем скролл страницы
+      // Уменьшаем/увеличиваем в зависимости от направления скролла
+      const delta = e.deltaY > 0 ? -0.1 : 0.1;
+      setZoom(prev => Math.max(0.25, Math.min(5, prev + delta)));
     };
 
-    const onMouseUp = () => {
-      if (isDragging.current) {
-        isDragging.current = false;
-        document.body.style.cursor = '';
-        document.body.style.userSelect = '';
-      }
-    };
-
-    window.addEventListener('mousemove', onMouseMove);
-    window.addEventListener('mouseup', onMouseUp);
-    return () => {
-      window.removeEventListener('mousemove', onMouseMove);
-      window.removeEventListener('mouseup', onMouseUp);
-    };
-  }, []);
+    el.addEventListener('wheel', handleWheel, { passive: false });
+    return () => el.removeEventListener('wheel', handleWheel);
+  }, [currentPage]);
 
   useEffect(() => {
     if (mats.current.cur && cvResultRef.current) {
@@ -104,7 +85,7 @@ export default function App() {
     if (mats.current.cur && histAfterRef.current) {
       drawHistogram(histAfterRef.current, mats.current.cur, channels);
     }
-  }, [tick, channels, currentPage, histHeight]);
+  }, [tick, channels, currentPage, zoom]);
 
   useEffect(() => {
     if (!histAfterRef.current) return;
@@ -130,7 +111,6 @@ export default function App() {
     const m = mats.current;
     for (const k in m.panelBases) {
       if (k === keepKey) continue;
-      // Сохраняем базы 'gray' и 'adjust' друг для друга
       if ((keepKey === 'gray' || keepKey === 'adjust') && (k === 'gray' || k === 'adjust')) continue;
       try { m.panelBases[k].delete(); } catch (_) { }
       delete m.panelBases[k];
@@ -219,7 +199,13 @@ export default function App() {
 
   const handleUndo = useCallback(() => {
     const m = mats.current;
-    if (!m.history.length) { showToast('Нечего откатывать'); return; }
+    
+    setGlobalResetTrigger(p => p + 1);
+
+    if (!m.history.length) { 
+      showToast('Ключевые точки сброшены'); 
+      return; 
+    }
     
     const prev = m.history.pop();
     
@@ -232,16 +218,14 @@ export default function App() {
     m.cur = prev;
     if (m.base) { m.base.delete(); m.base = null; }
 
-    setGlobalResetTrigger(p => p + 1);
     refreshDisplay();
     showToast('Откат выполнен');
   }, [refreshDisplay, showToast, clearOtherBases]);
 
-  // ГЛОБАЛЬНЫЙ ОБРАБОТЧИК CTRL+Z
   useEffect(() => {
     const handleKeyDown = (e) => {
       if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault(); // Блокируем стандартный откат браузера
+        e.preventDefault();
         handleUndo();
       }
     };
@@ -438,7 +422,7 @@ export default function App() {
                 mats={mats} 
                 canvasRef={cvResultRef} 
                 showToast={showToast} 
-                historyLen={historyLen} 
+                resetTrigger={globalResetTrigger} 
               />
             </aside>
 
@@ -446,14 +430,6 @@ export default function App() {
               <div className="pane pane-image">
                 <div className="pane-title">
                   <span>Изображение</span>
-                  
-                  <div className="zoom-controls">
-                    <button className="sec" onClick={() => setZoom(z => Math.max(0.25, z - 0.25))} title="Уменьшить">-</button>
-                    <span className="zoom-label">{Math.round(zoom * 100)}%</span>
-                    <button className="sec" onClick={() => setZoom(z => Math.min(4, z + 0.25))} title="Увеличить">+</button>
-                    <button className="sec" onClick={() => setZoom(1)} title="Сбросить">1:1</button>
-                  </div>
-
                   <span>
                     {mats.current.cur
                       ? `${mats.current.cur.cols} × ${mats.current.cur.rows}`
@@ -461,7 +437,8 @@ export default function App() {
                   </span>
                 </div>
 
-                <div className="image-scroll-container">
+                {/* ДОБАВЛЕН REF ДЛЯ ОТСЛЕЖИВАНИЯ КОЛЕСИКА МЫШИ */}
+                <div className="image-scroll-container" ref={scrollContainerRef}>
                   {!hasImage && (
                     <div className="image-placeholder">
                       Изображение не загружено.<br />Выберите файл в меню слева.
@@ -492,11 +469,8 @@ export default function App() {
                 </div>
               </div>
 
-              <div className="resizer" onMouseDown={onMouseDown}>
-                <div className="resizer-handle"></div>
-              </div>
-
-              <div className="pane pane-hist" style={{ height: `${histHeight}px` }}>
+              {/* РЕСАЙЗЕР УДАЛЕН, ГИСТОГРАММА ИМЕЕТ ФИКСИРОВАННУЮ ВЫСОТУ */}
+              <div className="pane pane-hist" style={{ height: '180px' }}>
                 <div className="pane-title">
                   <span>Гистограмма</span>
                   <div className="hist-channels">

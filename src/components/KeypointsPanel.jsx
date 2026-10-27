@@ -276,6 +276,18 @@ export default function KeypointsPanel({ mats, canvasRef, showToast, resetTrigge
     showToast('Ключевые точки отменены');
   };
 
+  // ГЛОБАЛЬНЫЙ ОБРАБОТЧИК CTRL+Z
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault(); // Блокируем стандартный откат браузера
+        handleReset();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleReset]);
   const hasBase = points.length > 0;
 
   return (

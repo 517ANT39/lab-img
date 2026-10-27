@@ -92,7 +92,6 @@ body {
   width: 100%;
   height: 100%;
   overflow-y: auto;
-  overflow-x: hidden;
 }
 
 /* ============================================================
@@ -105,7 +104,7 @@ body {
   min-height: 0;
 }
 
-/* Левое меню */
+/* Левое меню — фиксированная ширина, свой скролл */
 .controls {
   flex: 0 0 420px;
   display: flex;
@@ -119,13 +118,13 @@ body {
 .controls::-webkit-scrollbar { width: 8px; }
 .controls::-webkit-scrollbar-thumb { background: #333a49; border-radius: 4px; }
 
-/* Правая колонка */
+/* Правая колонка — картинка и график */
 .viewer {
   flex: 1;
   min-width: 0;
   display: flex;
   flex-direction: column;
-  gap: 0; /* Отступ задается ресайзером */
+  gap: 12px;
   height: 100%;
   min-height: 0;
 }
@@ -147,23 +146,30 @@ body {
   flex: none;
   border-radius: 8px 8px 0 0;
 }
+.pane-body {
+  padding: 12px 14px 14px; overflow-y: auto;
+}
 
 /* --- БЛОК ИЗОБРАЖЕНИЯ --- */
 .pane-image {
-  flex: 1; /* Занимает всё свободное место */
+  flex: 1;
   min-height: 0;
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
+/* Контейнер для скролла и зума */
 .image-scroll-container {
   flex: 1;
   min-height: 0;
-  overflow: auto; 
+  overflow: auto;
   display: flex;
-  padding: 0; 
+  padding: 10px;
   background: repeating-conic-gradient(#20242c 0% 25%, #191c23 0% 50%) 50% / 18px 18px;
+  /* Центрируем картинку, когда она меньше контейнера */
+  align-items: center;
+  justify-content: center;
 }
 
 .pane-image canvas {
@@ -181,61 +187,18 @@ body {
   color: var(--muted); font-size: 13px; text-align: center; padding: 40px 20px;
 }
 
-/* Кнопки зума */
-.zoom-controls {
-  display: flex;
-  align-items: center;
-  gap: 4px;
-}
-.zoom-controls button.sec {
-  width: 28px; height: 28px; padding: 0;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 14px; font-weight: bold;
-}
-.zoom-controls button.sec:last-child {
-  width: auto; padding: 0 10px; font-size: 11.5px;
-}
-.zoom-label {
-  font-size: 11.5px; font-weight: 600; min-width: 42px; text-align: center; color: var(--acc);
-}
-
-/* --- РЕСАЙЗЕР (ПОЛЗУНОК МЕЖДУ ПАНЕЛЯМИ) --- */
-.resizer {
-  height: 14px;
-  cursor: ns-resize;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  flex: none;
-  margin: 2px 0;
-  z-index: 10;
-}
-
-.resizer-handle {
-  width: 50px;
-  height: 4px;
-  background: #4a5468;
-  border-radius: 2px;
-  transition: background 0.2s, transform 0.2s;
-}
-
-.resizer:hover .resizer-handle {
-  background: var(--acc);
-  transform: scaleX(1.2);
-}
-
-/* --- БЛОК ГИСТОГРАММЫ --- */
+/* --- БЛОК ГИСТОГРАММЫ (ФИКСИРОВАННАЯ ВЫСОТА) --- */
 .pane-hist {
-  /* Высота контролируется из React (inline style) */
-  flex: none; 
+  flex: 0 0 180px; /* Жестко задаем высоту 180px */
   display: flex;
   flex-direction: column;
   overflow: hidden;
 }
 
 .pane-hist canvas {
-  width: 100% !important;
-  height: 100% !important;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
   display: block;
   border-radius: 0 0 8px 8px;
 }
@@ -367,10 +330,9 @@ button.danger { background: var(--danger); }
   .controls { width: 100%; flex: none; height: auto; overflow: visible; padding-right: 0; }
   .viewer { height: auto; gap: 12px; }
   
-  /* На мобилках отключаем ресайзер и задаем фиксированные высоты */
-  .resizer { display: none; }
+  /* На мобилках отключаем фиксированную высоту гистограммы и растягиваем картинку */
   .pane-image { height: 50vh; flex: none; }
-  .pane-hist { height: 220px !important; flex: none; margin-top: 12px; }
+  .pane-hist { height: 220px; flex: none; margin-top: 12px; }
   
   .similar-panel { grid-template-columns: 1fr; }
   .video-panel { grid-template-columns: 1fr; }
