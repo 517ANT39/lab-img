@@ -38,8 +38,13 @@ export default function SimilarPanel({ showToast }) {
   }, []);
 
   const handleFiles = useCallback(async (files) => {
-    const list = Array.from(files).slice(0, 10);
-    if (list.length < 2) { showToast('Выберите от 3 до 10 изображений'); return; }
+    const list = Array.from(files);
+
+    // ПРОВЕРКА: от 3 до 10 файлов
+    if (list.length < 3 || list.length > 10) {
+      showToast(`Пожалуйста, выберите от 3 до 10 изображений (выбрано: ${list.length})`, 3000);
+      return;
+    }
 
     clearAll();
     setLoading(true);
@@ -82,7 +87,7 @@ export default function SimilarPanel({ showToast }) {
 
   const findBest = useCallback(() => {
     const list = imagesRef.current;
-    if (list.length < 2) { showToast('Нужно минимум 2 изображения'); return; }
+    if (list.length < 2) { showToast('Для сравнения нужно минимум 2 изображения'); return; }
     let bestScore = -Infinity, bi = -1, bj = -1;
     for (let i = 0; i < list.length; i++) {
       for (let j = i + 1; j < list.length; j++) {
@@ -99,7 +104,8 @@ export default function SimilarPanel({ showToast }) {
     <div className="similar-panel">
       <div className="sim-controls">
         <div>
-          <label>Изображения (3–10 штук)</label>
+          {/* Обновленная подпись с диапазоном */}
+          <label>Изображения (от 3 до 10 штук)</label>
           <input
             type="file"
             accept="image/*"
@@ -121,6 +127,8 @@ export default function SimilarPanel({ showToast }) {
         {images.length > 0 && (
           <div className="sim-count">
             Загружено: <b>{images.length}</b>
+            {images.length < 3 && ' (нужно минимум 3)'}
+            {images.length > 10 && ' (максимум 10)'}
           </div>
         )}
 
@@ -129,7 +137,7 @@ export default function SimilarPanel({ showToast }) {
       <div className="sim-results">
         {images.length === 0 && !loading && (
           <div className="sim-empty">
-            Изображений нет.
+            Изображений нет.<br/>Загрузите от 3 до 10 изображений для сравнения.
           </div>
         )}
 
