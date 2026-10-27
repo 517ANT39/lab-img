@@ -5,8 +5,6 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
   const [bri, setBri] = useState(0);
   const [con, setCon] = useState(100);
   const [sat, setSat] = useState(100);
-  
-  // Локальный флаг: двигал ли пользователь ползунки после последнего применения
   const [isDirty, setIsDirty] = useState(false);
 
   // Синхронизация: если база сброшена (глобальный сброс или откат), ползунки возвращаются в 0
@@ -19,14 +17,12 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
     }
   }, [hasChanges]);
 
-  // Проверяем, была ли нажата кнопка "В оттенки серого"
   const isGrayFilter = !!(mats.current && mats.current.isGrayFilter);
 
   const onChangeBri = (v) => { setBri(v); setIsDirty(true); };
   const onChangeCon = (v) => { setCon(v); setIsDirty(true); };
   
   const onChangeSat = (v) => {
-    // Блокируем, если включен фильтр серого и пытаемся увеличить насыщенность
     if (isGrayFilter && v > 0) {
       showToast('Применены градации серого — насыщенность недоступна', 2500);
       return;
@@ -42,10 +38,14 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
     const c = con / 100;
     const s = sat / 100;
 
-    // Применяем через общую систему App.jsx
     applyOp((src) => {
+      // ВАЖНО: берем базовое изображение (до первого применения), чтобы избежать накопления эффекта
+      const base = (mats.current.panelBases && mats.current.panelBases.adjust) 
+        ? mats.current.panelBases.adjust 
+        : src;
+        
       const res = new cv.Mat();
-      src.convertTo(res, -1, c, b);
+      base.convertTo(res, -1, c, b);
       
       if (Math.abs(s - 1) > 0.001 && !isGrayFilter) {
         const hsv = new cv.Mat();
@@ -64,11 +64,10 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
       return res;
     }, 'Яркость/Контраст', 'adjust');
 
-    setIsDirty(false); // Применили — теперь изменений нет
+    setIsDirty(false);
   };
 
   const reset = () => {
-    // Вызываем общую систему сброса (сбрасывает картинку к базе)
     resetPanel('adjust', 'Яркость/Контраст');
   };
 
