@@ -88,11 +88,11 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
           <button className="sec" onClick={doExp}>Эксп</button>
         </div>
 
-        <div className="btn-row">
+        {/* <div className="btn-row">
           <button className={hasChanges ? 'red' : 'sec'} onClick={handleReset}>
             ↺ Сброс
           </button>
-        </div>
+        </div> */}
       </div>
     </details>
   );

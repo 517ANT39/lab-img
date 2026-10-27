@@ -92,9 +92,9 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
           <button className={isDirty ? 'green' : 'sec'} onClick={apply}>
             ✓ Применить
           </button>
-          <button className={hasChanges ? 'red' : 'sec'} onClick={reset}>
+          {/* <button className={hasChanges ? 'red' : 'sec'} onClick={reset}>
             ↺ Сброс
-          </button>
+          </button> */}
         </div>
 
         <div className="hint">

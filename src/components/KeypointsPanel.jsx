@@ -299,11 +299,11 @@ export default function KeypointsPanel({ mats, canvasRef, showToast, resetTrigge
           Найти ключевые точки
         </button>
 
-        <div className="btn-row">
+        {/* <div className="btn-row">
           <button className={hasBase ? 'red' : 'sec'} onClick={handleReset}>
             ↺ Сброс
           </button>
-        </div>
+        </div> */}
       </div>
     </details>
   );

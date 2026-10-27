@@ -237,6 +237,19 @@ export default function App() {
     showToast('Откат выполнен');
   }, [refreshDisplay, showToast, clearOtherBases]);
 
+  // ГЛОБАЛЬНЫЙ ОБРАБОТЧИК CTRL+Z
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
+        e.preventDefault(); // Блокируем стандартный откат браузера
+        handleUndo();
+      }
+    };
+
+    window.addEventListener('keydown', handleKeyDown);
+    return () => window.removeEventListener('keydown', handleKeyDown);
+  }, [handleUndo]);
+
   const applyOp = useCallback((fn, opName, panelKey) => {
     const m = mats.current;
     if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
@@ -277,7 +290,6 @@ export default function App() {
 
     if (m.base) { m.base.delete(); m.base = null; }
 
-    // НЕ сбрасываем AdjustPanel триггером при его собственных операциях и сером цвете
     if (panelKey !== 'adjust' && panelKey !== 'gray') {
       setGlobalResetTrigger(p => p + 1);
     }
@@ -309,7 +321,7 @@ export default function App() {
       if (m.before) { m.before.delete(); m.before = null; }
       if (m.base) { m.base.delete(); m.base = null; }
 
-      clearOtherBases(panelKey); // Передаем panelKey, чтобы не задеть оставшуюся базу
+      clearOtherBases(panelKey);
       setGlobalResetTrigger(p => p + 1);
       refreshDisplay();
       showToast((label || 'Операция') + ' отменена');
@@ -360,11 +372,11 @@ export default function App() {
                   onChange={(e) => e.target.files[0] && handleFileUpload(e.target.files[0])} />
                 <div className="btn-row">
                   <button className="sec" onClick={handleReset}>↺ Сброс</button>
-                  <button className="sec" onClick={handleUndo}>
+                  <button className="sec" onClick={handleUndo} title="Ctrl+Z">
                     ↶ Откат ({historyLen})
                   </button>
                 </div>
-                <div className="hint">Клик по изображению — «пипетка».</div>
+                <div className="hint">Клик по изображению — «пипетка». Откат работает по <b>Ctrl+Z</b>.</div>
               </Section>
 
               <Section title="Информация" defaultOpen>
@@ -380,12 +392,12 @@ export default function App() {
                   <button onClick={() => applyOp((src) => grayToRGB(toGray(src)), 'Полутоновое', 'gray')}>
                     В оттенки серого
                   </button>
-                  <button
+                  {/* <button
                     className={hasBaseGray ? 'red' : 'sec'}
                     onClick={() => resetPanel('gray', 'Градации серого')}
                   >
                     ↺ Сброс
-                  </button>
+                  </button> */}
                 </div>
               </Section>
 

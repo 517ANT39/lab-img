@@ -84,11 +84,11 @@ export default function FiltersPanel({ applyOp, resetPanel, hasChanges }) {
         <input type="range" min="3" max="31" step="2" value={med} onChange={(e) => setMed(+e.target.value)} />
         <button style={{ marginTop: 6 }} onClick={doMedian}>Медианная фильтрация</button>
 
-        <div className="btn-row">
+        {/* <div className="btn-row">
           <button className={hasChanges ? 'red' : 'sec'} onClick={handleReset}>
             ↺ Сброс
           </button>
-        </div>
+        </div> */}
       </div>
     </details>
   );

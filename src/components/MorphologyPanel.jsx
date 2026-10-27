@@ -61,11 +61,11 @@ export default function MorphologyPanel({ applyOp, resetPanel, hasChanges }) {
         <input type="range" min="1" max="8" value={iter} onChange={(e) => setIter(+e.target.value)} />
         <button style={{ marginTop: 8 }} onClick={run}>Применить</button>
 
-        <div className="btn-row">
+        {/* <div className="btn-row">
           <button className={hasChanges ? 'red' : 'sec'} onClick={handleReset}>
             ↺ Сброс
           </button>
-        </div>
+        </div> */}
       </div>
     </details>
   );
