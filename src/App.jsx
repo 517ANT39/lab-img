@@ -203,7 +203,7 @@ export default function App() {
     setGlobalResetTrigger(p => p + 1);
 
     if (!m.history.length) { 
-      showToast('Ключевые точки сброшены'); 
+      // showToast('Ключевые точки сброшены'); 
       return; 
     }
     
