@@ -1,4 +1,4 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import cv from '../cv/cvInstance.js';
 import jsfeat from '@webarkit/jsfeat-next';
 import { toGray, showMat } from '../cv/utils.js';
@@ -130,17 +130,14 @@ function detectSIFT(grayU8, threshold) {
   return filtered.map(p => ({ x: p.x, y: p.y, size: p.size, angle: p.angle }));
 }
 
-export default function KeypointsPanel({ mats, canvasRef, showToast, resetTrigger }) {
-  const [type, setType] = useState(DEFAULTS.type);
-  const [th, setTh] = useState(DEFAULTS.th);
-  const [points, setPoints] = useState([]);
+export default function KeypointsPanel({
+  mats, canvasRef, showToast, tick,
+  points, params, setParams, onRun, onReset,
+}) {
+  const { type, th } = params;
 
-  // СБРОС ТОЧЕК при нажатии "Откат" или "Сброс" в шапке
-  useEffect(() => {
-    setPoints([]);
-  }, [resetTrigger]);
-
-  // Перерисовка canvas при изменении points
+  // Перерисовка canvas: изображение + наложенные точки.
+  // Зависит от tick (обновление картинки) и points (обновление наложения).
   useEffect(() => {
     const m = mats.current;
     const c = canvasRef && canvasRef.current;
@@ -148,7 +145,7 @@ export default function KeypointsPanel({ mats, canvasRef, showToast, resetTrigge
 
     showMat(m.cur, c);
 
-    if (points.length === 0) return;
+    if (!points || points.length === 0) return;
     const ctx = c.getContext('2d');
 
     for (const p of points) {
@@ -200,7 +197,7 @@ export default function KeypointsPanel({ mats, canvasRef, showToast, resetTrigge
         ctx.fill();
       }
     }
-  }, [points]); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [points, tick]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const run = () => {
     const m = mats.current;
@@ -266,36 +263,24 @@ export default function KeypointsPanel({ mats, canvasRef, showToast, resetTrigge
       return;
     }
 
-    setPoints(detected);
+    // Отправляем в App: push в history + сохранение точек
+    if (onRun) onRun(detected, params);
   };
 
   const handleReset = () => {
-    setPoints([]);
-    setType(DEFAULTS.type);
-    setTh(DEFAULTS.th);
+    setParams(DEFAULTS);
+    if (onReset) onReset();
     showToast('Ключевые точки отменены');
   };
 
-  // ГЛОБАЛЬНЫЙ ОБРАБОТЧИК CTRL+Z
-  useEffect(() => {
-    const handleKeyDown = (e) => {
-      if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z') {
-        e.preventDefault(); // Блокируем стандартный откат браузера
-        handleReset();
-      }
-    };
-
-    window.addEventListener('keydown', handleKeyDown);
-    return () => window.removeEventListener('keydown', handleKeyDown);
-  }, [handleReset]);
-  const hasBase = points.length > 0;
+  const hasBase = points && points.length > 0;
 
   return (
     <details>
       <summary>Ключевые точки</summary>
       <div className="body">
         <label>Детектор</label>
-        <select value={type} onChange={(e) => setType(e.target.value)}>
+        <select value={type} onChange={(e) => setParams({ type: e.target.value })}>
           <option value="harris">Харрис (Harris)</option>
           <option value="orb">FAST</option>
           <option value="sift">SIFT</option>
@@ -304,7 +289,7 @@ export default function KeypointsPanel({ mats, canvasRef, showToast, resetTrigge
         <label>Порог: {th}</label>
         <input
           type="range" min="1" max="120" value={th}
-          onChange={(e) => setTh(+e.target.value)}
+          onChange={(e) => setParams({ th: +e.target.value })}
         />
 
         <button style={{ marginTop: 8 }} onClick={run}>

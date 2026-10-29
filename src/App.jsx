@@ -1,7 +1,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import cv from './cv/cvInstance.js';
 import { useOpenCV } from './hooks/useOpenCV.js';
-import { showMat, toGray, grayToRGB } from './cv/utils.js';
+import { toGray, grayToRGB } from './cv/utils.js';
 import { drawHistogram } from './cv/histogram.js';
 
 import Section from './components/Section.jsx';
@@ -24,19 +24,21 @@ const MAIN_PAGES = [
 
 // === ДЕФОЛТЫ ПАРАМЕТРОВ ПАНЕЛЕЙ ===
 const PANEL_DEFAULTS = {
-  adjust:  { bri: 0, con: 100, sat: 100 },
-  bw:      { black: 0, white: 255, gamma: 100, nonLinearType: 'gamma' },
-  edge:    { t1: 80, t2: 180 },
-  filters: { sharp: 100, mbLen: 15, mbAng: 0, med: 5 },
-  morph:   { op: 'erode', shape: 0, ksize: 3, iter: 1 },
+  adjust:    { bri: 0, con: 100, sat: 100 },
+  bw:        { black: 0, white: 255, gamma: 100, nonLinearType: 'gamma' },
+  edge:      { t1: 80, t2: 180 },
+  filters:   { sharp: 100, mbLen: 15, mbAng: 0, med: 5 },
+  morph:     { op: 'erode', shape: 0, ksize: 3, iter: 1 },
+  keypoints: { type: 'harris', th: 25 },
 };
 
 const makeInitialPanelParams = () => ({
-  adjust:  { bri: 0, con: 100, sat: 100 },
-  bw:      { black: 0, white: 255, gamma: 100, nonLinearType: 'gamma' },
-  edge:    { t1: 80, t2: 180 },
-  filters: { sharp: 100, mbLen: 15, mbAng: 0, med: 5 },
-  morph:   { op: 'erode', shape: 0, ksize: 3, iter: 1 },
+  adjust:    { bri: 0, con: 100, sat: 100 },
+  bw:        { black: 0, white: 255, gamma: 100, nonLinearType: 'gamma' },
+  edge:      { t1: 80, t2: 180 },
+  filters:   { sharp: 100, mbLen: 15, mbAng: 0, med: 5 },
+  morph:     { op: 'erode', shape: 0, ksize: 3, iter: 1 },
+  keypoints: { type: 'harris', th: 25 },
 });
 
 export default function App() {
@@ -66,6 +68,9 @@ export default function App() {
       [panel]: { ...prev[panel], ...updates }
     }));
   }, []);
+
+  // === КЛЮЧЕВЫЕ ТОЧКИ (управляются из App) ===
+  const [keypointsPoints, setKeypointsPoints] = useState([]);
 
   const scrollContainerRef = useRef(null);
 
@@ -106,10 +111,8 @@ export default function App() {
     return () => el.removeEventListener('wheel', handleWheel);
   }, [currentPage]);
 
+  // Гистограмма (showMat теперь в KeypointsPanel)
   useEffect(() => {
-    if (mats.current.cur && cvResultRef.current) {
-      showMat(mats.current.cur, cvResultRef.current);
-    }
     if (mats.current.cur && histAfterRef.current) {
       drawHistogram(histAfterRef.current, mats.current.cur, channels);
     }
@@ -148,6 +151,7 @@ export default function App() {
     if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
     setHistoryLen(0);
     setPanelParams(makeInitialPanelParams());
+    setKeypointsPoints([]);
   }, []);
 
   const clearOtherBases = useCallback((keepKey) => {
@@ -208,6 +212,7 @@ export default function App() {
 
         setZoom(1);
         setGlobalResetTrigger(p => p + 1);
+        setKeypointsPoints([]);
         refreshDisplay();
         showToast('Изображение загружено');
         URL.revokeObjectURL(url);
@@ -236,6 +241,7 @@ export default function App() {
     m.base = null;
     setZoom(1);
     setGlobalResetTrigger(p => p + 1);
+    setKeypointsPoints([]);
     refreshDisplay();
     showToast('Сброшено к исходному');
   }, [refreshDisplay, showToast, clearAllBases]);
@@ -274,6 +280,16 @@ export default function App() {
       if (newParams) {
         setPanelParams(p => ({ ...p, [key]: { ...newParams } }));
       }
+    }
+
+    // === ВОССТАНОВЛЕНИЕ / СБРОС КЛЮЧЕВЫХ ТОЧЕК ===
+    if (paramEntry && paramEntry.panelKey === 'keypoints') {
+      const remaining = (m.paramHistory || []).filter(e => e && e.panelKey === 'keypoints');
+      const prevKp = remaining[remaining.length - 1];
+      setKeypointsPoints(prevKp?.pointsAtApply || []);
+    } else {
+      // Картинка изменилась — старые точки невалидны
+      setKeypointsPoints([]);
     }
 
     refreshDisplay();
@@ -340,6 +356,9 @@ export default function App() {
 
     if (m.base) { m.base.delete(); m.base = null; }
 
+    // Изображение изменилось — старые ключевые точки невалидны
+    setKeypointsPoints([]);
+
     if (panelKey !== 'adjust' && panelKey !== 'gray') {
       setGlobalResetTrigger(p => p + 1);
     }
@@ -380,6 +399,7 @@ export default function App() {
 
       clearOtherBases(panelKey);
       setGlobalResetTrigger(p => p + 1);
+      setKeypointsPoints([]);
       refreshDisplay();
       showToast((label || 'Операция') + ' отменена');
     } else {
@@ -387,6 +407,21 @@ export default function App() {
       showToast('Параметры сброшены');
     }
   }, [refreshDisplay, showToast, clearOtherBases, pushHistory]);
+
+  // === ПРИМЕНЕНИЕ КЛЮЧЕВЫХ ТОЧЕК (push history + сохранить точки) ===
+  const applyKeypoints = useCallback((pts, paramsSnapshot) => {
+    const m = mats.current;
+    if (!m.cur) { showToast('Сначала загрузите изображение'); return; }
+    
+    const paramEntry = {
+      panelKey: 'keypoints',
+      paramsAtApply: { ...paramsSnapshot },
+      pointsAtApply: pts,
+    };
+    pushHistory(m.cur.clone(), paramEntry);
+    setKeypointsPoints(pts);
+    refreshDisplay();
+  }, [pushHistory, refreshDisplay, showToast]);
 
   if (!ready) {
     return (
@@ -498,8 +533,13 @@ export default function App() {
               <KeypointsPanel 
                 mats={mats} 
                 canvasRef={cvResultRef} 
-                showToast={showToast} 
-                resetTrigger={globalResetTrigger} 
+                showToast={showToast}
+                tick={tick}
+                points={keypointsPoints}
+                params={panelParams.keypoints}
+                setParams={(u) => setPanelParam('keypoints', u)}
+                onRun={applyKeypoints}
+                onReset={() => setKeypointsPoints([])}
               />
             </aside>
 
