@@ -1,14 +1,10 @@
-import { useState } from 'react';
 import cv from '../cv/cvInstance.js';
 import { filter2DMat } from '../cv/utils.js';
 
 const DEFAULTS = { sharp: 100, mbLen: 15, mbAng: 0, med: 5 };
 
-export default function FiltersPanel({ applyOp, resetPanel, hasChanges }) {
-  const [sharp, setSharp] = useState(DEFAULTS.sharp);
-  const [mbLen, setMbLen] = useState(DEFAULTS.mbLen);
-  const [mbAng, setMbAng] = useState(DEFAULTS.mbAng);
-  const [med, setMed] = useState(DEFAULTS.med);
+export default function FiltersPanel({ applyOp, resetPanel, hasChanges, params, setParams }) {
+  const { sharp, mbLen, mbAng, med } = params;
 
   const doSharp = () => {
     const a = sharp / 100;
@@ -57,10 +53,7 @@ export default function FiltersPanel({ applyOp, resetPanel, hasChanges }) {
   };
 
   const handleReset = () => {
-    setSharp(DEFAULTS.sharp);
-    setMbLen(DEFAULTS.mbLen);
-    setMbAng(DEFAULTS.mbAng);
-    setMed(DEFAULTS.med);
+    setParams(DEFAULTS);
     resetPanel('filters', 'Фильтры');
   };
 
@@ -69,26 +62,20 @@ export default function FiltersPanel({ applyOp, resetPanel, hasChanges }) {
       <summary>Фильтры и эффекты</summary>
       <div className="body">
         <label>Резкость: {(sharp / 100).toFixed(1)}</label>
-        <input type="range" min="10" max="300" value={sharp} onChange={(e) => setSharp(+e.target.value)} />
+        <input type="range" min="10" max="300" value={sharp} onChange={(e) => setParams({ sharp: +e.target.value })} />
         <button style={{ marginTop: 6 }} onClick={doSharp}>Повысить резкость</button>
 
         <label style={{ marginTop: 12 }}>Размытие в движении — длина: {mbLen}</label>
-        <input type="range" min="3" max="51" step="2" value={mbLen} onChange={(e) => setMbLen(+e.target.value)} />
+        <input type="range" min="3" max="51" step="2" value={mbLen} onChange={(e) => setParams({ mbLen: +e.target.value })} />
         <label>Угол: {mbAng}°</label>
-        <input type="range" min="0" max="180" value={mbAng} onChange={(e) => setMbAng(+e.target.value)} />
+        <input type="range" min="0" max="180" value={mbAng} onChange={(e) => setParams({ mbAng: +e.target.value })} />
         <button style={{ marginTop: 6 }} onClick={doMotion}>Размытие в движении</button>
 
         <button style={{ marginTop: 12 }} onClick={doEmboss}>Тиснение (Emboss)</button>
 
         <label style={{ marginTop: 12 }}>Медианный фильтр — ядро: {med}</label>
-        <input type="range" min="3" max="31" step="2" value={med} onChange={(e) => setMed(+e.target.value)} />
+        <input type="range" min="3" max="31" step="2" value={med} onChange={(e) => setParams({ med: +e.target.value })} />
         <button style={{ marginTop: 6 }} onClick={doMedian}>Медианная фильтрация</button>
-
-        {/* <div className="btn-row">
-          <button className={hasChanges ? 'red' : 'sec'} onClick={handleReset}>
-            ↺ Сброс
-          </button>
-        </div> */}
       </div>
     </details>
   );

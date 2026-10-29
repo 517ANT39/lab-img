@@ -1,12 +1,10 @@
-import { useState } from 'react';
 import cv from '../cv/cvInstance.js';
 import { toGray, grayToRGB } from '../cv/utils.js';
 
 const DEFAULTS = { t1: 80, t2: 180 };
 
-export default function EdgePanel({ applyOp, resetPanel, hasChanges }) {
-  const [t1, setT1] = useState(DEFAULTS.t1);
-  const [t2, setT2] = useState(DEFAULTS.t2);
+export default function EdgePanel({ applyOp, resetPanel, hasChanges, params, setParams }) {
+  const { t1, t2 } = params;
 
   const doCanny = () => {
     applyOp((src) => {
@@ -41,8 +39,7 @@ export default function EdgePanel({ applyOp, resetPanel, hasChanges }) {
   };
 
   const handleReset = () => {
-    setT1(DEFAULTS.t1);
-    setT2(DEFAULTS.t2);
+    setParams(DEFAULTS);
     resetPanel('edge', 'Детекторы границ');
   };
 
@@ -51,9 +48,9 @@ export default function EdgePanel({ applyOp, resetPanel, hasChanges }) {
       <summary>Детекторы границ</summary>
       <div className="body">
         <label>Canny — нижний порог: {t1}</label>
-        <input type="range" min="0" max="255" value={t1} onChange={(e) => setT1(+e.target.value)} />
+        <input type="range" min="0" max="255" value={t1} onChange={(e) => setParams({ t1: +e.target.value })} />
         <label>Canny — верхний порог: {t2}</label>
-        <input type="range" min="0" max="255" value={t2} onChange={(e) => setT2(+e.target.value)} />
+        <input type="range" min="0" max="255" value={t2} onChange={(e) => setParams({ t2: +e.target.value })} />
         <button style={{ marginTop: 6 }} onClick={doCanny}>Детектор Canny</button>
         <button className="sec" style={{ marginTop: 10 }} onClick={doRoberts}>Оператор Робертса</button>
 

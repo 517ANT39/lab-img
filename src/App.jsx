@@ -22,6 +22,23 @@ const MAIN_PAGES = [
   { id: 'video', label: '3. Обработка видео' }
 ];
 
+// === ДЕФОЛТЫ ПАРАМЕТРОВ ПАНЕЛЕЙ ===
+const PANEL_DEFAULTS = {
+  adjust:  { bri: 0, con: 100, sat: 100 },
+  bw:      { black: 0, white: 255, gamma: 100, nonLinearType: 'gamma' },
+  edge:    { t1: 80, t2: 180 },
+  filters: { sharp: 100, mbLen: 15, mbAng: 0, med: 5 },
+  morph:   { op: 'erode', shape: 0, ksize: 3, iter: 1 },
+};
+
+const makeInitialPanelParams = () => ({
+  adjust:  { bri: 0, con: 100, sat: 100 },
+  bw:      { black: 0, white: 255, gamma: 100, nonLinearType: 'gamma' },
+  edge:    { t1: 80, t2: 180 },
+  filters: { sharp: 100, mbLen: 15, mbAng: 0, med: 5 },
+  morph:   { op: 'erode', shape: 0, ksize: 3, iter: 1 },
+});
+
 export default function App() {
   const { ready } = useOpenCV();
   const [meta, setMeta] = useState(null);
@@ -38,12 +55,24 @@ export default function App() {
   const [currentPage, setCurrentPage] = useState('image');
   const [zoom, setZoom] = useState(1);
 
+  // === ПЕРСИСТЕНТНОЕ СОСТОЯНИЕ ПАРАМЕТРОВ ПАНЕЛЕЙ ===
+  const [panelParams, setPanelParams] = useState(makeInitialPanelParams);
+  const panelParamsRef = useRef(panelParams);
+  panelParamsRef.current = panelParams;
+
+  const setPanelParam = useCallback((panel, updates) => {
+    setPanelParams(prev => ({
+      ...prev,
+      [panel]: { ...prev[panel], ...updates }
+    }));
+  }, []);
+
   const scrollContainerRef = useRef(null);
 
   const mats = useRef({
     orig: null, cur: null, before: null, base: null, kpBase: null,
     isGrayFilter: false,
-    history: [], panelBases: {}
+    history: [], paramHistory: [], panelBases: {}
   });
 
   const cvResultRef = useRef(null);
@@ -68,8 +97,7 @@ export default function App() {
     if (!el) return;
 
     const handleWheel = (e) => {
-      e.preventDefault(); // Останавливаем скролл страницы
-      // Уменьшаем/увеличиваем в зависимости от направления скролла
+      e.preventDefault();
       const delta = e.deltaY > 0 ? -0.1 : 0.1;
       setZoom(prev => Math.max(0.25, Math.min(5, prev + delta)));
     };
@@ -98,13 +126,28 @@ export default function App() {
     return () => observer.disconnect();
   }, [channels]);
 
+  // === PUSH HISTORY (синхронизирует mats.history и paramHistory) ===
+  const pushHistory = useCallback((matToSave, paramEntry) => {
+    const m = mats.current;
+    m.history.push(matToSave);
+    if (!m.paramHistory) m.paramHistory = [];
+    m.paramHistory.push(paramEntry);
+    while (m.history.length > 20) {
+      const old = m.history.shift();
+      m.paramHistory.shift();
+      try { old.delete(); } catch (_) { }
+    }
+  }, []);
+
   const clearAllBases = useCallback(() => {
     const m = mats.current;
     while (m.history.length) { const h = m.history.pop(); try { h.delete(); } catch (_) { } }
+    if (m.paramHistory) m.paramHistory.length = 0;
     for (const k in m.panelBases) { try { m.panelBases[k].delete(); } catch (_) { } }
     m.panelBases = {};
     if (m.kpBase) { try { m.kpBase.delete(); } catch (_) { } m.kpBase = null; }
     setHistoryLen(0);
+    setPanelParams(makeInitialPanelParams());
   }, []);
 
   const clearOtherBases = useCallback((keepKey) => {
@@ -203,11 +246,13 @@ export default function App() {
     setGlobalResetTrigger(p => p + 1);
 
     if (!m.history.length) { 
-      // showToast('Ключевые точки сброшены'); 
       return; 
     }
     
     const prev = m.history.pop();
+    const paramEntry = (m.paramHistory && m.paramHistory.length)
+      ? m.paramHistory.pop()
+      : null;
     
     clearOtherBases(null);
     m.isGrayFilter = false;
@@ -217,6 +262,19 @@ export default function App() {
     m.before = m.cur;
     m.cur = prev;
     if (m.base) { m.base.delete(); m.base = null; }
+
+    // === ВОССТАНОВЛЕНИЕ ПАРАМЕТРОВ ПОЛЗУНКОВ ===
+    if (paramEntry && paramEntry.panelKey) {
+      const key = paramEntry.panelKey;
+      const remaining = (m.paramHistory || []).filter(e => e && e.panelKey === key);
+      const prevEntry = remaining[remaining.length - 1];
+      const newParams = prevEntry?.paramsAtApply
+        || PANEL_DEFAULTS[key]
+        || null;
+      if (newParams) {
+        setPanelParams(p => ({ ...p, [key]: { ...newParams } }));
+      }
+    }
 
     refreshDisplay();
     showToast('Откат выполнен');
@@ -262,8 +320,16 @@ export default function App() {
       setIsGrayMode(false);
     }
 
-    m.history.push(m.cur.clone());
-    if (m.history.length > 20) { const old = m.history.shift(); try { old.delete(); } catch (_) { } }
+    // === СНИМОК ПАРАМЕТРОВ ПАНЕЛИ ===
+    const paramEntry = panelKey
+      ? {
+          panelKey,
+          paramsAtApply: panelParamsRef.current[panelKey]
+            ? { ...panelParamsRef.current[panelKey] }
+            : null
+        }
+      : null;
+    pushHistory(m.cur.clone(), paramEntry);
 
     if (m.before) m.before.delete();
     m.before = m.cur.clone();
@@ -279,7 +345,7 @@ export default function App() {
     }
     refreshDisplay();
     if (opName) showToast(opName);
-  }, [refreshDisplay, showToast, clearOtherBases]);
+  }, [refreshDisplay, showToast, clearOtherBases, pushHistory]);
 
   const resetPanel = useCallback((panelKey, label) => {
     const m = mats.current;
@@ -288,8 +354,15 @@ export default function App() {
     if (base) {
       const res = base.clone();
       
-      m.history.push(m.cur.clone());
-      if (m.history.length > 20) { const old = m.history.shift(); try { old.delete(); } catch (_) { } }
+      const paramEntry = panelKey
+        ? {
+            panelKey,
+            paramsAtApply: panelParamsRef.current[panelKey]
+              ? { ...panelParamsRef.current[panelKey] }
+              : null
+          }
+        : null;
+      pushHistory(m.cur.clone(), paramEntry);
 
       const oldCur = m.cur;
       m.cur = res;
@@ -313,7 +386,7 @@ export default function App() {
       refreshDisplay();
       showToast('Параметры сброшены');
     }
-  }, [refreshDisplay, showToast, clearOtherBases]);
+  }, [refreshDisplay, showToast, clearOtherBases, pushHistory]);
 
   if (!ready) {
     return (
@@ -376,12 +449,6 @@ export default function App() {
                   <button onClick={() => applyOp((src) => grayToRGB(toGray(src)), 'Полутоновое', 'gray')}>
                     В оттенки серого
                   </button>
-                  {/* <button
-                    className={hasBaseGray ? 'red' : 'sec'}
-                    onClick={() => resetPanel('gray', 'Градации серого')}
-                  >
-                    ↺ Сброс
-                  </button> */}
                 </div>
               </Section>
 
@@ -392,6 +459,8 @@ export default function App() {
                 showToast={showToast}
                 hasChanges={hasBaseAdjust}
                 isGrayMode={isGrayMode}
+                params={panelParams.adjust}
+                setParams={(u) => setPanelParam('adjust', u)}
               />
               
               <BWCorrectionPanel
@@ -399,24 +468,32 @@ export default function App() {
                 applyOp={applyOp}
                 resetPanel={resetPanel}
                 hasChanges={hasBaseBW}
+                params={panelParams.bw}
+                setParams={(u) => setPanelParam('bw', u)}
               />
               <MorphologyPanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
                 hasChanges={hasBaseMorph}
+                params={panelParams.morph}
+                setParams={(u) => setPanelParam('morph', u)}
               />
               <FiltersPanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
                 hasChanges={hasBaseFilters}
+                params={panelParams.filters}
+                setParams={(u) => setPanelParam('filters', u)}
               />
               <EdgePanel
                 mats={mats}
                 applyOp={applyOp}
                 resetPanel={resetPanel}
                 hasChanges={hasBaseEdge}
+                params={panelParams.edge}
+                setParams={(u) => setPanelParam('edge', u)}
               />
               <KeypointsPanel 
                 mats={mats} 
@@ -437,7 +514,6 @@ export default function App() {
                   </span>
                 </div>
 
-                {/* ДОБАВЛЕН REF ДЛЯ ОТСЛЕЖИВАНИЯ КОЛЕСИКА МЫШИ */}
                 <div className="image-scroll-container" ref={scrollContainerRef}>
                   {!hasImage && (
                     <div className="image-placeholder">
@@ -469,7 +545,6 @@ export default function App() {
                 </div>
               </div>
 
-              {/* РЕСАЙЗЕР УДАЛЕН, ГИСТОГРАММА ИМЕЕТ ФИКСИРОВАННУЮ ВЫСОТУ */}
               <div className="pane pane-hist" style={{ height: '180px' }}>
                 <div className="pane-title">
                   <span>Гистограмма</span>

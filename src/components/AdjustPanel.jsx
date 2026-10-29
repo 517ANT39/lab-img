@@ -1,43 +1,38 @@
-import { useState, useEffect } from 'react';
+import { useEffect } from 'react';
 import cv from '../cv/cvInstance.js';
 
-export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasChanges, isGrayMode }) {
-  const [bri, setBri] = useState(0);
-  const [con, setCon] = useState(100);
-  const [sat, setSat] = useState(100);
-  const [isDirty, setIsDirty] = useState(false);
-
-  // Полный сброс, только если база была полностью уничтожена (сброс, откат, другой фильтр)
-  useEffect(() => {
-    if (!hasChanges) {
-      setBri(0);
-      setCon(100);
-      setSat(100);
-      setIsDirty(false);
-    }
-  }, [hasChanges]);
+export default function AdjustPanel({
+  mats, applyOp, resetPanel, showToast, hasChanges, isGrayMode,
+  params, setParams,
+}) {
+  const { bri, con, sat } = params;
 
   // Сброс ТОЛЬКО насыщенности при включении градаций серого
   useEffect(() => {
-    if (isGrayMode) {
-      setSat(100);
+    if (isGrayMode && sat !== 100) {
+      setParams({ sat: 100 });
     }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isGrayMode]);
 
-  const onChangeBri = (v) => { setBri(v); setIsDirty(true); };
-  const onChangeCon = (v) => { setCon(v); setIsDirty(true); };
+  const onChangeBri = (v) => setParams({ bri: v });
+  const onChangeCon = (v) => setParams({ con: v });
   
   const onChangeSat = (v) => {
     if (isGrayMode && v > 0) {
       showToast('Применены градации серого — насыщенность недоступна', 2500);
       return;
     }
-    setSat(v);
-    setIsDirty(true);
+    setParams({ sat: v });
   };
 
   const apply = () => {
-    if (!isDirty) { showToast('Нет изменений для применения'); return; }
+    const isDefault = bri === 0 && con === 100 && sat === 100;
+    const hasBase = !!(mats.current.panelBases && mats.current.panelBases.adjust);
+    if (isDefault && !hasBase) {
+      showToast('Нет изменений для применения');
+      return;
+    }
 
     const b = bri;
     const c = con / 100;
@@ -67,11 +62,10 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
       }
       return res;
     }, 'Яркость/Контраст', 'adjust');
-
-    setIsDirty(false);
   };
 
   const reset = () => {
+    setParams({ bri: 0, con: 100, sat: 100 });
     resetPanel('adjust', 'Яркость/Контраст');
   };
 

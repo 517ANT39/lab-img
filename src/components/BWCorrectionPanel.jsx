@@ -1,4 +1,3 @@
-import { useState } from 'react';
 import cv from '../cv/cvInstance.js';
 import { toGray, grayToRGB, clamp } from '../cv/utils.js';
 
@@ -13,11 +12,8 @@ function applyLUT(gray, fn) {
 
 const DEFAULTS = { black: 0, white: 255, gamma: 100, nonLinearType: 'gamma' };
 
-export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
-  const [black, setBlack] = useState(DEFAULTS.black);
-  const [white, setWhite] = useState(DEFAULTS.white);
-  const [gamma, setGamma] = useState(DEFAULTS.gamma);
-  const [nonLinearType, setNonLinearType] = useState(DEFAULTS.nonLinearType);
+export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges, params, setParams }) {
+  const { black, white, gamma, nonLinearType } = params;
 
   const doLinear = () => {
     if (white <= black) { alert('Белая точка должна быть больше чёрной'); return; }
@@ -63,10 +59,7 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
   };
 
   const handleReset = () => {
-    setBlack(DEFAULTS.black);
-    setWhite(DEFAULTS.white);
-    setGamma(DEFAULTS.gamma);
-    setNonLinearType(DEFAULTS.nonLinearType);
+    setParams(DEFAULTS);
     resetPanel('bw', 'Коррекция Ч/Б');
   };
 
@@ -77,9 +70,9 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
         {/* ЛИНЕЙНАЯ КОРРЕКЦИЯ */}
         <div style={{ fontWeight: 600, fontSize: 12 }}>Линейная (растяжение уровней)</div>
         <label>Чёрная точка: {black}</label>
-        <input type="range" min="0" max="254" value={black} onChange={(e) => setBlack(+e.target.value)} />
+        <input type="range" min="0" max="254" value={black} onChange={(e) => setParams({ black: +e.target.value })} />
         <label>Белая точка: {white}</label>
-        <input type="range" min="1" max="255" value={white} onChange={(e) => setWhite(+e.target.value)} />
+        <input type="range" min="1" max="255" value={white} onChange={(e) => setParams({ white: +e.target.value })} />
         <button style={{ marginTop: 7 }} onClick={doLinear}>Применить линейную коррекцию</button>
 
         {/* НЕЛИНЕЙНАЯ КОРРЕКЦИЯ */}
@@ -88,7 +81,7 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
         <label>Метод</label>
         <select 
           value={nonLinearType} 
-          onChange={(e) => setNonLinearType(e.target.value)}
+          onChange={(e) => setParams({ nonLinearType: e.target.value })}
           style={{ marginBottom: 8 }}
         >
           <option value="gamma">Гамма (γ)</option>
@@ -96,7 +89,6 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
           <option value="exp">Экспонента</option>
         </select>
 
-        {/* Ползунок появляется только для Гаммы */}
         {nonLinearType === 'gamma' && (
           <>
             <label>γ (гамма): {(gamma / 100).toFixed(2)}</label>
@@ -105,7 +97,7 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
               min="10" 
               max="500" 
               value={gamma} 
-              onChange={(e) => setGamma(+e.target.value)} 
+              onChange={(e) => setParams({ gamma: +e.target.value })} 
             />
           </>
         )}
@@ -113,17 +105,6 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges }) {
         <button style={{ marginTop: 8 }} onClick={doNonLinear}>
           Применить нелинейную
         </button>
-
-        {/* КНОПКА СБРОСА ПАНЕЛИ (если нужна)
-        <div className="btn-row" style={{ marginTop: 12 }}>
-          <button 
-            className={hasChanges ? 'red' : 'sec'} 
-            onClick={handleReset}
-          >
-            ↺ Сброс
-          </button>
-        </div> */}
-
       </div>
     </details>
   );

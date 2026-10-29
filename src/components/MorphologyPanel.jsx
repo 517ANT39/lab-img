@@ -1,14 +1,10 @@
-import { useState } from 'react';
 import cv from '../cv/cvInstance.js';
 import { toGray, grayToRGB } from '../cv/utils.js';
 
 const DEFAULTS = { op: 'erode', shape: 0, ksize: 3, iter: 1 };
 
-export default function MorphologyPanel({ applyOp, resetPanel, hasChanges }) {
-  const [op, setOp] = useState(DEFAULTS.op);
-  const [shape, setShape] = useState(DEFAULTS.shape);
-  const [ksize, setKsize] = useState(DEFAULTS.ksize);
-  const [iter, setIter] = useState(DEFAULTS.iter);
+export default function MorphologyPanel({ applyOp, resetPanel, hasChanges, params, setParams }) {
+  const { op, shape, ksize, iter } = params;
 
   const run = () => {
     applyOp((src) => {
@@ -30,10 +26,7 @@ export default function MorphologyPanel({ applyOp, resetPanel, hasChanges }) {
   };
 
   const handleReset = () => {
-    setOp(DEFAULTS.op);
-    setShape(DEFAULTS.shape);
-    setKsize(DEFAULTS.ksize);
-    setIter(DEFAULTS.iter);
+    setParams(DEFAULTS);
     resetPanel('morph', 'Морфология');
   };
 
@@ -42,7 +35,7 @@ export default function MorphologyPanel({ applyOp, resetPanel, hasChanges }) {
       <summary>Морфологические операции</summary>
       <div className="body">
         <label>Операция</label>
-        <select value={op} onChange={(e) => setOp(e.target.value)}>
+        <select value={op} onChange={(e) => setParams({ op: e.target.value })}>
           <option value="erode">Эрозия</option>
           <option value="dilate">Дилатация</option>
           <option value="open">Открытие</option>
@@ -50,22 +43,16 @@ export default function MorphologyPanel({ applyOp, resetPanel, hasChanges }) {
           <option value="gradient">Градиент</option>
         </select>
         <label>Форма ядра</label>
-        <select value={shape} onChange={(e) => setShape(+e.target.value)}>
+        <select value={shape} onChange={(e) => setParams({ shape: +e.target.value })}>
           <option value="0">Прямоугольник</option>
           <option value="1">Крест</option>
           <option value="2">Эллипс</option>
         </select>
         <label>Размер ядра: {ksize}</label>
-        <input type="range" min="3" max="31" step="2" value={ksize} onChange={(e) => setKsize(+e.target.value)} />
+        <input type="range" min="3" max="31" step="2" value={ksize} onChange={(e) => setParams({ ksize: +e.target.value })} />
         <label>Итерации: {iter}</label>
-        <input type="range" min="1" max="8" value={iter} onChange={(e) => setIter(+e.target.value)} />
+        <input type="range" min="1" max="8" value={iter} onChange={(e) => setParams({ iter: +e.target.value })} />
         <button style={{ marginTop: 8 }} onClick={run}>Применить</button>
-
-        {/* <div className="btn-row">
-          <button className={hasChanges ? 'red' : 'sec'} onClick={handleReset}>
-            ↺ Сброс
-          </button>
-        </div> */}
       </div>
     </details>
   );
