@@ -505,6 +505,7 @@ export default function App() {
                 hasChanges={hasBaseBW}
                 params={panelParams.bw}
                 setParams={(u) => setPanelParam('bw', u)}
+                setIsGrayMode={setIsGrayMode}
               />
               <MorphologyPanel
                 mats={mats}
@@ -513,6 +514,7 @@ export default function App() {
                 hasChanges={hasBaseMorph}
                 params={panelParams.morph}
                 setParams={(u) => setPanelParam('morph', u)}
+                setIsGrayMode={setIsGrayMode}
               />
               <FiltersPanel
                 mats={mats}
@@ -529,6 +531,7 @@ export default function App() {
                 hasChanges={hasBaseEdge}
                 params={panelParams.edge}
                 setParams={(u) => setPanelParam('edge', u)}
+                setIsGrayMode={setIsGrayMode}
               />
               <KeypointsPanel 
                 mats={mats} 

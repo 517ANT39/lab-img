@@ -3,10 +3,11 @@ import { toGray, grayToRGB } from '../cv/utils.js';
 
 const DEFAULTS = { t1: 80, t2: 180 };
 
-export default function EdgePanel({ applyOp, resetPanel, hasChanges, params, setParams }) {
+export default function EdgePanel({ applyOp, resetPanel, hasChanges, params, setParams, setIsGrayMode }) {
   const { t1, t2 } = params;
 
   const doCanny = () => {
+    setIsGrayMode(true);
     applyOp((src) => {
       const g = toGray(src);
       const edges = new cv.Mat();
@@ -18,6 +19,7 @@ export default function EdgePanel({ applyOp, resetPanel, hasChanges, params, set
   };
 
   const doRoberts = () => {
+    setIsGrayMode(true);
     applyOp((src) => {
       const g = toGray(src);
       const kx = cv.matFromArray(2, 2, cv.CV_32F, [1, 0, 0, -1]);

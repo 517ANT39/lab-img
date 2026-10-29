@@ -12,10 +12,11 @@ function applyLUT(gray, fn) {
 
 const DEFAULTS = { black: 0, white: 255, gamma: 100, nonLinearType: 'gamma' };
 
-export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges, params, setParams }) {
+export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges, params, setParams, setIsGrayMode }) {
   const { black, white, gamma, nonLinearType } = params;
 
   const doLinear = () => {
+    setIsGrayMode(true);
     if (white <= black) { alert('Белая точка должна быть больше чёрной'); return; }
     applyOp((src) => {
       const g = toGray(src);
@@ -27,6 +28,7 @@ export default function BWCorrectionPanel({ applyOp, resetPanel, hasChanges, par
   };
 
   const doNonLinear = () => {
+    setIsGrayMode(true);
     if (nonLinearType === 'gamma') {
       const gVal = gamma / 100;
       applyOp((src) => {

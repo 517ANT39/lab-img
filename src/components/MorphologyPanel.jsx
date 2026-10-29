@@ -3,10 +3,11 @@ import { toGray, grayToRGB } from '../cv/utils.js';
 
 const DEFAULTS = { op: 'erode', shape: 0, ksize: 3, iter: 1 };
 
-export default function MorphologyPanel({ applyOp, resetPanel, hasChanges, params, setParams }) {
+export default function MorphologyPanel({ applyOp, resetPanel, hasChanges, params, setParams, setIsGrayMode }) {
   const { op, shape, ksize, iter } = params;
 
   const run = () => {
+    setIsGrayMode(true);
     applyOp((src) => {
       const kernel = cv.getStructuringElement(shape, new cv.Size(ksize, ksize));
       const g = toGray(src);
