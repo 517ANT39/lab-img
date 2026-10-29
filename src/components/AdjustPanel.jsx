@@ -84,7 +84,7 @@ export default function AdjustPanel({
 
         <div className="btn-stack">
           <button onClick={apply}>
-            ✓ Применить
+            Применить
           </button>
           {/* <button className={hasChanges ? 'red' : 'sec'} onClick={reset}>
             ↺ Сброс
