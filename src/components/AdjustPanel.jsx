@@ -89,16 +89,12 @@ export default function AdjustPanel({ mats, applyOp, resetPanel, showToast, hasC
         <input type="range" min="0" max="300" value={sat} onChange={(e) => onChangeSat(+e.target.value)} />
 
         <div className="btn-stack">
-          <button className={isDirty ? 'green' : 'sec'} onClick={apply}>
+          <button onClick={apply}>
             ✓ Применить
           </button>
           {/* <button className={hasChanges ? 'red' : 'sec'} onClick={reset}>
             ↺ Сброс
           </button> */}
-        </div>
-
-        <div className="hint">
-          Ползунки изменяют значения. Картинка меняется только по кнопке <b>Применить</b>.
         </div>
       </div>
     </details>
